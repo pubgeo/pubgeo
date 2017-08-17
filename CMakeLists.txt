@@ -1,0 +1,28 @@
+CMAKE_MINIMUM_REQUIRED(VERSION 3.0.2)
+PROJECT(pubgeo)
+
+SET(CMAKE_CXX_STANDARD 11)
+
+IF(WIN32)
+       MESSAGE(ERROR "Windows builds are currently not working due to erroneous linking errors.")
+       # Default install directory
+       MESSAGE(WARNING "Advance INSTALL OSGeo4W64. Include: (Command Line Tools) pdal and its dependencies. Potentially requires change to PDALConfig.cmake.")
+       SET(CMAKE_PREFIX_PATH "C:\\OSGeo4W64\\")
+
+       # This part is for auto-defines in windows libraries that cause macro errors in our code
+       add_definitions(-DWIN32_LEAN_AND_MEAN -DNOMINMAX)
+ENDIF()
+
+FIND_PACKAGE(GDAL 1.9.0 REQUIRED)# Using Open Source Geo for Windows installer
+FIND_PACKAGE(PDAL 1.4.0 REQUIRED)
+
+# This makes linking/including a little cleaner looking later
+SET(DAL_LIBS ${GDAL_LIBRARY} ${PDAL_LIBRARIES})
+SET(DAL_INCLUDE_DIRS ${GDAL_INCLUDE_DIR} ${PDAL_INCLUDE_DIRS})
+MESSAGE(STATUS "${DAL_INCLUDE_DIRS}")
+
+SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+ADD_SUBDIRECTORY(src/common)
+ADD_SUBDIRECTORY(src/align3d)
+ADD_SUBDIRECTORY(src/shr3d)

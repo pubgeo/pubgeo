@@ -1,0 +1,36 @@
+These instructions are not complete and do not currently result in a working build. It is close, and subsets of the project have worked with PDAL. The final project could not be entirely integrated.
+
+Download and run OSGeo4W64 Installer.
+	Select advanced installation. Everything else until packages is default.
+		From Command Line Utilities select:
+			Gdal, gdal-dev, pdal
+			Install packages to meet dependencies. (page after package selection)
+	
+Download and install visual studio 2017 community (REQUIRES SYSTEM-RESTART)
+	Install packages:
+		.Net desktop development (possibly unnecessary)
+		Desktop development with c++
+			** include c++/cli support, std lib mods, mfc and atl, win8.1 sdk **
+			https://stackoverflow.com/questions/42701019/problems-generating-solution-for-vs-2017-with-cmake
+	This combination of packages generates a compatible visual studio environment. Some packages may be unnecessary (mfc +atl, or .net desktop env)
+		
+	Load project (folder with CmakeLists.txt) AS 64 BIT!! VS will probably default you to X86
+		Visual studio should start processing the cmake file
+			cmake will probably fail:
+				Missing c/cxx compiler
+					see above package installation, you probably missed a package that was necessary in 2017 vs installation
+				pdal config fails "file or directory x referenced by variable _foo does no exist ! (typo from source)
+					edit C:\OSGeo4W64\lib\pdal\cmake\PDALConfig.cmake
+						replace lines 31+ with: (Changing the OSGEO4W64_INSTALLATION_LOCATION respective to your installation directory) This is due PDAL being compiled on a different machine with a different folder structure
+							set(OSGEO4W64_INSTALLATION_LOCATION "C:/OSGeo4W64/")
+							set(PDAL_INCLUDE_DIRS "${OSGEO4W64_INSTALLATION_LOCATION}include")
+							set(PDAL_LIBRARY_DIRS "${OSGEO4W64_INSTALLATION_LOCATION}lib")
+							include("${CMAKE_CURRENT_LIST_DIR}/PDALTargets.cmake")
+							set(PDAL_LIBRARIES ${PDAL_LIBRARY_DIRS}/pdalcpp.lib ${PDAL_LIBRARY_DIRS}/pdal_util.lib)
+							check_required_components(PDAL)
+
+These instructions will generate a linker error missing what appear to be network conversions for ints/shorts/etc referenced in PDALs BEExtractor.
+Possible solutions (Scott's best guesses)
+    Perhaps un-defining 'WIN32_LEAN_AND_MEAN'? It was used to remove macros that were breaking the build. IE MAX(..) and MIN(..)
+    PDAL build for windows on OSGeo package improperly built/configured (Partly already true
+    Build PDAL on local machine and
