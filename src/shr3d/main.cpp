@@ -9,10 +9,11 @@
 // Print command line arguments.
 void printArguments() {
     printf("Command line arguments: <Input File (LAS|TIF)> <Options>\n");
-    printf("Options:\n");
+    printf("Required Options:\n");
     printf("  DH=    horizontal uncertainty (meters)\n");
     printf("  DZ=    vertical uncertainty (meters)\n");
     printf("  AGL=   minimum building height above ground level (meters)\n");
+    printf("Options:\n");
     printf("  AREA=	 minimum building area (meters)\n");
     printf("  EGM96  set this flag to write vertical datum = EGM96\n");
     printf("  FOPEN  set this flag for ground detection under dense foliage\n");
