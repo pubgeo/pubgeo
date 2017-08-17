@@ -113,12 +113,12 @@ int main(int argc, char **argv) {
 
         // Fill small voids in the DSM.
         minImage.fillVoidsPyramid(true, 2);
-
+#ifdef DEBUG
         // Write the MIN image as FLOAT.
         char minOutFileName[1024];
         sprintf(minOutFileName, "%s_MIN.tif\0", inputFileName);
         minImage.write(minOutFileName, true);
-
+#endif
         // Find many of the trees by comparing MIN and MAX. Set their values to void.
         for (int j = 0; j < dsmImage.height; j++) {
             for (int i = 0; i < dsmImage.width; i++) {
@@ -146,9 +146,11 @@ int main(int argc, char **argv) {
         }
 
         // Write the DSM2 image as FLOAT.
+#ifdef DEBUG
         char dsm2OutFileName[1024];
         sprintf(dsm2OutFileName, "%s_DSM2.tif\0", inputFileName);
         dsmImage.write(dsm2OutFileName, true);
+#endif
     } else {
         printf("Error: Unrecognized file type.");
         return -1;
