@@ -258,7 +258,7 @@ namespace pubgeo {
                     GDALRasterBand *poBand = poDstDS->GetRasterBand(i);
                     poBand->SetNoDataValue(noData);
                     for (unsigned int j = 0; j < this->height; j++) {
-                        for (int k = 0; k < this->width * this->bands; k++) {
+                        for (unsigned int k = 0; k < this->width * this->bands; k++) {
                             if (this->data[j][k] == 0)
                                 raster[k] = noData;
                             else
@@ -312,21 +312,75 @@ namespace pubgeo {
 
             // Copy points into the ortho image.
             if (mode == MIN_VALUE) {
-                for (int i = 0; i < pset.numPoints; i++) {
-                    int x = int((pset.x(i) + pset.xOff - easting) / gsd + 0.5);
+                for (unsigned long i = 0; i < pset.numPoints; i++) {
+                    unsigned int x = int((pset.x(i) + pset.xOff - easting) / gsd + 0.5);
                     if ((x < 0) || (x > this->width - 1)) continue;
-                    int y = this->height - 1 - int((pset.y(i) + pset.yOff - northing) / gsd + 0.5);
+                    unsigned int y = this->height - 1 - int((pset.y(i) + pset.yOff - northing) / gsd + 0.5);
                     if ((y < 0) || (y > this->height - 1)) continue;
                     TYPE z = TYPE((pset.z(i) + pset.zOff - this->offset) / this->scale);
                     if ((this->data[y][x] == 0) || (z < this->data[y][x])) this->data[y][x] = z;
                 }
             } else if (mode == MAX_VALUE) {
-                for (int i = 0; i < pset.numPoints; i++) {
-                    int x = int((pset.x(i) + pset.xOff - easting) / gsd + 0.5);
+                for (unsigned long i = 0; i < pset.numPoints; i++) {
+                    unsigned int x = int((pset.x(i) + pset.xOff - easting) / gsd + 0.5);
                     if ((x < 0) || (x > this->width - 1)) continue;
-                    int y = this->height - 1 - int((pset.y(i) + pset.yOff - northing) / gsd + 0.5);
+                    unsigned int y = this->height - 1 - int((pset.y(i) + pset.yOff - northing) / gsd + 0.5);
                     if ((y < 0) || (y > this->height - 1)) continue;
                     TYPE z = TYPE((pset.z(i) + pset.zOff - this->offset) / this->scale);
+                    if ((this->data[y][x] == 0) || (z > this->data[y][x])) this->data[y][x] = z;
+                }
+            }
+            return true;
+        }
+
+        // Read image from PDAL PointView.
+        bool readFromPointView(pdal::PointViewPtr view, float gsdMeters, MIN_MAX_TYPE mode = MIN_VALUE) {
+            // Read a PSET file (e.g., BPF or LAS).
+            PointCloud pset;
+            bool ok = pset.Read(view);
+            if (!ok) return false;
+
+            // Calculate scale and offset for conversion to TYPE.
+            float minVal = pset.bounds.zMin - 1;    // Reserve zero for noData value
+            float maxVal = pset.bounds.zMax + 1;
+            float maxImageVal = (float) (pow(2.0, int(sizeof(TYPE) * 8)) - 1);
+            this->offset = minVal;
+            this->scale = (maxVal - minVal) / maxImageVal;
+
+            // Calculate image width and height.
+            this->width = (unsigned int) ((pset.bounds.xMax - pset.bounds.xMin) / gsdMeters + 1);
+            this->height = (unsigned int) ((pset.bounds.yMax - pset.bounds.yMin) / gsdMeters + 1);
+
+            // Allocate an ortho image.
+            this->Allocate(this->width, this->height);
+            this->easting = pset.bounds.xMin;
+            this->northing = pset.bounds.yMin;
+            this->zone = pset.zone;
+            this->gsd = gsdMeters;
+
+            // Copy points into the ortho image.
+            if (mode == MIN_VALUE) {
+               for (unsigned long i = 0; i < pset.numPoints; i++) {
+                    double dx = view->getFieldAs<double>(pdal::Dimension::Id::X, i);
+                    double dy = view->getFieldAs<double>(pdal::Dimension::Id::Y, i);
+                    double dz = view->getFieldAs<double>(pdal::Dimension::Id::Z, i);
+                    unsigned int x = int((dx - easting) / gsd + 0.5);
+                    if ((x < 0) || (x > this->width - 1)) continue;
+                    unsigned int y = this->height - 1 - int((dy - northing) / gsd + 0.5);
+                    if ((y < 0) || (y > this->height - 1)) continue;
+                    TYPE z = TYPE((dz - this->offset) / this->scale);
+                    if ((this->data[y][x] == 0) || (z < this->data[y][x])) this->data[y][x] = z;
+                }
+            } else if (mode == MAX_VALUE) {
+                for (unsigned long i = 0; i < pset.numPoints; i++) {
+                    double dx = view->getFieldAs<double>(pdal::Dimension::Id::X, i);
+                    double dy = view->getFieldAs<double>(pdal::Dimension::Id::Y, i);
+                    double dz = view->getFieldAs<double>(pdal::Dimension::Id::Z, i);
+                    unsigned int x = int((dx - easting) / gsd + 0.5);
+                    if ((x < 0) || (x > this->width - 1)) continue;
+                    unsigned int y = this->height - 1 - int((dy - northing) / gsd + 0.5);
+                    if ((y < 0) || (y > this->height - 1)) continue;
+                    TYPE z = TYPE((dz - this->offset) / this->scale);
                     if ((this->data[y][x] == 0) || (z > this->data[y][x])) this->data[y][x] = z;
                 }
             }
@@ -358,27 +412,27 @@ namespace pubgeo {
             // Create image pyramid.
             std::vector<OrthoImage<TYPE> *> pyramid;
             pyramid.push_back(this);
-            int level = 0;
+            unsigned int level = 0;
             while ((count > 0) && (level < maxLevel)) {
                 // Create next level.
                 OrthoImage<TYPE> *newImagePtr = new OrthoImage<TYPE>;
 
-                int nextWidth = pyramid[level]->width / 2;
-                int nextHeight = pyramid[level]->height / 2;
+                unsigned int nextWidth = pyramid[level]->width / 2;
+                unsigned int nextHeight = pyramid[level]->height / 2;
                 newImagePtr->Allocate(nextWidth, nextHeight, 1);
 
                 // Fill in non-void values from level below building up the pyramid with a simple running average.
-                for (int j = 0; j < nextHeight; j++) {
-                    for (int i = 0; i < nextWidth; i++) {
-                        int j2 = MIN(MAX(0, j * 2 + 1), pyramid[level]->height - 1);
-                        int i2 = MIN(MAX(0, i * 2 + 1), pyramid[level]->width - 1);
+                for (unsigned int j = 0; j < nextHeight; j++) {
+                    for (unsigned int i = 0; i < nextWidth; i++) {
+                        unsigned int j2 = MIN(MAX(0, j * 2 + 1), pyramid[level]->height - 1);
+                        unsigned int i2 = MIN(MAX(0, i * 2 + 1), pyramid[level]->width - 1);
 
                         // Average neighboring pixels from below.
                         float z = 0;
                         int ct = 0;
                         std::vector<TYPE> neighbors;
-                        for (int jj = MAX(0, j2 - 1); jj <= MIN(j2 + 1, pyramid[level]->height - 1); jj++) {
-                            for (int ii = MAX(0, i2 - 1); ii <= MIN(i2 + 1, pyramid[level]->width - 1); ii++) {
+                        for (unsigned int jj = MAX(0, j2 - 1); jj <= MIN(j2 + 1, pyramid[level]->height - 1); jj++) {
+                            for (unsigned int ii = MAX(0, i2 - 1); ii <= MIN(i2 + 1, pyramid[level]->width - 1); ii++) {
                                 if (pyramid[level]->data[jj][ii] != 0) {
                                     z += pyramid[level]->data[jj][ii];
                                     ct++;
@@ -399,12 +453,12 @@ namespace pubgeo {
 
             // Void fill down the pyramid.
             for (int k = level - 1; k >= 0; k--) {
-                for (int j = 0; j < pyramid[k]->height; j++) {
-                    for (int i = 0; i < pyramid[k]->width; i++) {
+                for (unsigned int j = 0; j < pyramid[k]->height; j++) {
+                    for (unsigned int i = 0; i < pyramid[k]->width; i++) {
                         // Fill this pixel if it is currently void.
                         if (pyramid[k]->data[j][i] == 0) {
-                            int j2 = MIN(MAX(0, j / 2), pyramid[k + 1]->height - 1);
-                            int i2 = MIN(MAX(0, i / 2), pyramid[k + 1]->width - 1);
+                            unsigned int j2 = MIN(MAX(0, j / 2), pyramid[k + 1]->height - 1);
+                            unsigned int i2 = MIN(MAX(0, i / 2), pyramid[k + 1]->width - 1);
 
                             if (noSmoothing) {
                                 // Just use the closest pixel from above.
@@ -413,9 +467,9 @@ namespace pubgeo {
                                 // Average neighboring pixels from above.
                                 float z = 0;
                                 int ct = 0;
-                                for (int jj = MAX(0, j2 - 1);
+                                for (unsigned int jj = MAX(0, j2 - 1);
                                      jj <= MIN(j2 + 1, pyramid[k + 1]->height - 1); jj++) {
-                                    for (int ii = MAX(0, i2 - 1);
+                                    for (unsigned int ii = MAX(0, i2 - 1);
                                          ii <= MIN(i2 + 1, pyramid[k + 1]->width - 1); ii++) {
                                         z += pyramid[k + 1]->data[jj][ii];
                                         ct++;
@@ -430,28 +484,28 @@ namespace pubgeo {
             }
 
             // Deallocate memory for all but the input DSM.
-            for (int i = 1; i <= level; i++) {
+            for (unsigned int i = 1; i <= level; i++) {
                 pyramid[i]->Deallocate();
             }
         }
 
         // Apply a median filter to an image.
         void medianFilter(int rad, unsigned int dzShort) {
-            for (int j = 0; j < this->height; j++) {
-                for (int i = 0; i < this->width; i++) {
+            for (unsigned int j = 0; j < this->height; j++) {
+                for (unsigned int i = 0; i < this->width; i++) {
                     // Skip if void.
                     if (this->data[j][i] == 0) continue;
 
                     // Define bounds;
-                    int i1 = MAX(0, i - rad);
-                    int i2 = MIN(i + rad, this->width - 1);
-                    int j1 = MAX(0, j - rad);
-                    int j2 = MIN(j + rad, this->height - 1);
+                    unsigned int i1 = MAX(0, i - rad);
+                    unsigned int i2 = MIN(i + rad, this->width - 1);
+                    unsigned int j1 = MAX(0, j - rad);
+                    unsigned int j2 = MIN(j + rad, this->height - 1);
 
                     // Add valid values to the list.
                     std::vector<unsigned short> values;
-                    for (int jj = j1; jj <= j2; jj++) {
-                        for (int ii = i1; ii <= i2; ii++) {
+                    for (unsigned int jj = j1; jj <= j2; jj++) {
+                        for (unsigned int ii = i1; ii <= i2; ii++) {
                             if (this->data[jj][ii] != 0) {
                                 values.push_back(this->data[jj][ii]);
                             }
@@ -474,25 +528,25 @@ namespace pubgeo {
         void minFilter(int rad) {
             OrthoImage<TYPE> tempImage;
             tempImage.Allocate(this->width, this->height);
-            for (int j = 0; j < this->height; j++) {
-                for (int i = 0; i < this->width; i++) {
+            for (unsigned int j = 0; j < this->height; j++) {
+                for (unsigned int i = 0; i < this->width; i++) {
                     tempImage.data[j][i] = this->data[j][i];
                 }
             }
-            for (int j = 0; j < this->height; j++) {
-                for (int i = 0; i < this->width; i++) {
+            for (unsigned int j = 0; j < this->height; j++) {
+                for (unsigned int i = 0; i < this->width; i++) {
                     // Skip if void.
                     if (this->data[j][i] == 0) continue;
 
                     // Define bounds;
-                    int i1 = MAX(0, i - rad);
-                    int i2 = MIN(i + rad, this->width - 1);
-                    int j1 = MAX(0, j - rad);
-                    int j2 = MIN(j + rad, this->height - 1);
+                    unsigned int i1 = MAX(0, i - rad);
+                    unsigned int i2 = MIN(i + rad, this->width - 1);
+                    unsigned int j1 = MAX(0, j - rad);
+                    unsigned int j2 = MIN(j + rad, this->height - 1);
 
                     // Check all neighbors.
-                    for (int jj = j1; jj <= j2; jj++) {
-                        for (int ii = i1; ii <= i2; ii++) {
+                    for (unsigned int jj = j1; jj <= j2; jj++) {
+                        for (unsigned int ii = i1; ii <= i2; ii++) {
                             if (this->data[jj][ii] != 0) {
                                 if (this->data[jj][ii] < tempImage.data[j][i])
                                     tempImage.data[j][i] = this->data[jj][ii];
@@ -501,8 +555,8 @@ namespace pubgeo {
                     }
                 }
             }
-            for (int j = 0; j < this->height; j++) {
-                for (int i = 0; i < this->width; i++) {
+            for (unsigned int j = 0; j < this->height; j++) {
+                for (unsigned int i = 0; i < this->width; i++) {
                     this->data[j][i] = tempImage.data[j][i];
                 }
             }
@@ -511,25 +565,25 @@ namespace pubgeo {
         void edgeFilter(int dzShort) {
             OrthoImage<TYPE> tempImage;
             tempImage.Allocate(this->width, this->height);
-            for (int j = 0; j < this->height; j++) {
-                for (int i = 0; i < this->width; i++) {
+            for (unsigned int j = 0; j < this->height; j++) {
+                for (unsigned int i = 0; i < this->width; i++) {
                     tempImage.data[j][i] = this->data[j][i];
                 }
             }
-            for (int j = 0; j < this->height; j++) {
-                for (int i = 0; i < this->width; i++) {
+            for (unsigned int j = 0; j < this->height; j++) {
+                for (unsigned int i = 0; i < this->width; i++) {
                     // Skip if void.
                     if (this->data[j][i] == 0) continue;
 
                     // Define bounds;
-                    int i1 = MAX(0, i - 1);
-                    int i2 = MIN(i + 1, this->width - 1);
-                    int j1 = MAX(0, j - 1);
-                    int j2 = MIN(j + 1, this->height - 1);
+                    unsigned int i1 = MAX(0, i - 1);
+                    unsigned int i2 = MIN(i + 1, this->width - 1);
+                    unsigned int j1 = MAX(0, j - 1);
+                    unsigned int j2 = MIN(j + 1, this->height - 1);
 
                     // If there's an edge with any neighbor, then remove.
-                    for (int jj = j1; jj <= j2; jj++) {
-                        for (int ii = i1; ii <= i2; ii++) {
+                    for (unsigned int jj = j1; jj <= j2; jj++) {
+                        for (unsigned int ii = i1; ii <= i2; ii++) {
                             if (fabs(float(this->data[jj][ii] - this->data[j][i])) > dzShort) {
                                 tempImage.data[j][i] = 0;
                             }
@@ -537,8 +591,8 @@ namespace pubgeo {
                     }
                 }
             }
-            for (int j = 0; j < this->height; j++) {
-                for (int i = 0; i < this->width; i++) {
+            for (unsigned int j = 0; j < this->height; j++) {
+                for (unsigned int i = 0; i < this->width; i++) {
                     this->data[j][i] = tempImage.data[j][i];
                 }
             }

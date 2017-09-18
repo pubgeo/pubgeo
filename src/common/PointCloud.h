@@ -33,6 +33,7 @@ namespace pubgeo {
                                         float translateX, float translateY, float translateZ);
 
         bool Read(const char *fileName);
+        bool Read(pdal::PointViewPtr view);
 
         MinMaxXYZ bounds;
         int zone;

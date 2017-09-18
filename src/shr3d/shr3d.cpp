@@ -250,12 +250,12 @@ bool addNeighbors(std::vector<PixelType> &neighbors, OrthoImage<unsigned long> &
                   OrthoImage<unsigned short> &dsmImage, ObjectType &obj, unsigned int dzShort) {
     // Get neighbors for all pixels in the list.
     std::vector<PixelType> newNeighbors;
-    for (long k = 0; k < neighbors.size(); k++) {
-        long i = neighbors[k].i;
-        long j = neighbors[k].j;
+    for (size_t k = 0; k < neighbors.size(); k++) {
+        unsigned int i = neighbors[k].i;
+        unsigned int j = neighbors[k].j;
         float value = (float) dsmImage.data[j][i];
-        for (long jj = MAX(0, j - 1); jj <= MIN(j + 1, labelImage.height - 1); jj++) {
-            for (long ii = MAX(0, i - 1); ii <= MIN(i + 1, labelImage.width - 1); ii++) {
+        for (unsigned int jj = MAX(0, j - 1); jj <= MIN(j + 1, labelImage.height - 1); jj++) {
+            for (unsigned int ii = MAX(0, i - 1); ii <= MIN(i + 1, labelImage.width - 1); ii++) {
                 // Skip if pixel is already labeled or if it is LABEL_GROUND.
                 // Note that non-ground labels are initialized with 1.
                 if (labelImage.data[jj][ii] > 1) continue;
@@ -646,11 +646,11 @@ addClassNeighbors(std::vector<PixelType> &neighbors, OrthoImage<unsigned char> &
                   OrthoImage<unsigned char> &labeled, unsigned int label) {
     // Get neighbors for all pixels in the list.
     std::vector<PixelType> newNeighbors;
-    for (long k = 0; k < neighbors.size(); k++) {
-        long i = neighbors[k].i;
-        long j = neighbors[k].j;
-        for (long jj = MAX(0, j - 1); jj <= MIN(j + 1, classImage.height - 1); jj++) {
-            for (long ii = MAX(0, i - 1); ii <= MIN(i + 1, classImage.width - 1); ii++) {
+    for (size_t k = 0; k < neighbors.size(); k++) {
+        unsigned int i = neighbors[k].i;
+        unsigned int j = neighbors[k].j;
+        for (unsigned int jj = MAX(0, j - 1); jj <= MIN(j + 1, classImage.height - 1); jj++) {
+            for (unsigned int ii = MAX(0, i - 1); ii <= MIN(i + 1, classImage.width - 1); ii++) {
                 // If already labeled, then skip.
                 if (labeled.data[jj][ii] == 1) continue;
 
