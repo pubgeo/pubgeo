@@ -16,7 +16,6 @@ void printArguments() {
     printf("Options:\n");
     printf("  AREA=	 minimum building area (meters)\n");
     printf("  EGM96  set this flag to write vertical datum = EGM96\n");
-    printf("  FOPEN  set this flag for ground detection under dense foliage\n");
     printf("Examples:\n");
     printf("  For EO DSM:    shr3d dsm.tif DH=5.0 DZ=1.0 AGL=2 AREA=50.0 EGM96\n");
     printf("  For lidar DSM: shr3d dsm.tif DH=1.0 DZ=1.0 AGL=2.0 AREA=50.0\n");
