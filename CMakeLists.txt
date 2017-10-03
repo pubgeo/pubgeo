@@ -2,6 +2,7 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.0.2)
 PROJECT(pubgeo)
 
 SET(CMAKE_CXX_STANDARD 11)
+SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 IF(WIN32)
        MESSAGE(ERROR "Windows builds are currently not working due to erroneous linking errors.")

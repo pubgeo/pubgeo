@@ -119,8 +119,8 @@ int main(int argc, char **argv) {
         minImage.write(minOutFileName, true);
 #endif
         // Find many of the trees by comparing MIN and MAX. Set their values to void.
-        for (int j = 0; j < dsmImage.height; j++) {
-            for (int i = 0; i < dsmImage.width; i++) {
+        for (unsigned int j = 0; j < dsmImage.height; j++) {
+            for (unsigned int i = 0; i < dsmImage.width; i++) {
                 float minValue = (float) minImage.data[j][i];
 
                 // This check is to avoid penalizing spurious returns under very tall buildings.
@@ -129,12 +129,12 @@ int main(int argc, char **argv) {
                     // If this is in the trees, then set to void.
                     bool found = false;
                     double threshold = dz_meters / dsmImage.scale;
-                    int i1 = MAX(0, i - 1);
-                    int i2 = MIN(i + 1, dsmImage.width - 1);
-                    int j1 = MAX(0, j - 1);
-                    int j2 = MIN(j + 1, dsmImage.height - 1);
-                    for (int jj = j1; jj <= j2; jj++) {
-                        for (int ii = i1; ii <= i2; ii++) {
+                    unsigned int i1 = MAX(0, i - 1);
+                    unsigned int i2 = MIN(i + 1, dsmImage.width - 1);
+                    unsigned int j1 = MAX(0, j - 1);
+                    unsigned int j2 = MIN(j + 1, dsmImage.height - 1);
+                    for (unsigned int jj = j1; jj <= j2; jj++) {
+                        for (unsigned int ii = i1; ii <= i2; ii++) {
                             float diff = (float) dsmImage.data[jj][ii] - minValue;
                             if (diff < threshold) found = true;
                         }
@@ -185,8 +185,8 @@ int main(int argc, char **argv) {
     dtmImage.scale = dsmImage.scale;
     dtmImage.offset = dsmImage.offset;
     dtmImage.bands = dsmImage.bands;
-    for (int j = 0; j < dsmImage.height; j++) {
-        for (int i = 0; i < dsmImage.width; i++) {
+    for (unsigned int j = 0; j < dsmImage.height; j++) {
+        for (unsigned int i = 0; i < dsmImage.width; i++) {
             dtmImage.data[j][i] = minImage.data[j][i];
         }
     }
@@ -196,8 +196,8 @@ int main(int argc, char **argv) {
 
     // For DSM voids, also set DTM value to void.
     printf("Setting DTM values to VOID where DSM is VOID...\n");
-    for (int j = 0; j < dsmImage.height; j++) {
-        for (int i = 0; i < dsmImage.width; i++) {
+    for (unsigned int j = 0; j < dsmImage.height; j++) {
+        for (unsigned int i = 0; i < dsmImage.width; i++) {
             if (dsmImage.data[j][i] == 0) dtmImage.data[j][i] = 0;
         }
     }
@@ -223,8 +223,8 @@ int main(int argc, char **argv) {
     classImage.northing = dsmImage.northing;
     classImage.zone = dsmImage.zone;
     classImage.gsd = dsmImage.gsd;
-    for (int j = 0; j < classImage.height; j++) {
-        for (int i = 0; i < classImage.width; i++) {
+    for (unsigned int j = 0; j < classImage.height; j++) {
+        for (unsigned int i = 0; i < classImage.width; i++) {
             // Set default as unlabeled.
             classImage.data[j][i] = LAS_UNCLASSIFIED;
 
@@ -249,8 +249,8 @@ int main(int argc, char **argv) {
     char classOutFileName[1024];
     sprintf(classOutFileName, "%s_class.tif\0", inputFileName);
     classImage.write(classOutFileName, false, egm96);
-    for (int j = 0; j < classImage.height; j++) {
-        for (int i = 0; i < classImage.width; i++) {
+    for (unsigned int j = 0; j < classImage.height; j++) {
+        for (unsigned int i = 0; i < classImage.width; i++) {
             if (classImage.data[j][i] != LAS_BUILDING) classImage.data[j][i] = 0;
         }
     }
@@ -262,6 +262,3 @@ int main(int argc, char **argv) {
     time(&t1);
     printf("Total time elapsed = %f seconds\n", double(t1 - t0));
 }
-
-
-

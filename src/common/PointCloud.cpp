@@ -56,6 +56,28 @@ namespace pubgeo {
         }
     }
 
+    bool PointCloud::Read(pdal::PointViewPtr view) {
+        numPoints = view->size();
+        if (numPoints < 1) {
+            std::cerr << "[PUBGEO::PointCloud::READ] No points found in file." << std::endl;
+            return false;
+        }
+
+        pdal::BOX3D box;
+        view->calculateBounds(box);
+        pdal::SpatialReference sr = view->spatialReference();
+        zone = sr.computeUTMZone(box);
+
+        // used later to return points
+        xOff = (int) floor(box.minx);
+        yOff = (int) floor(box.miny);
+        zOff = (int) floor(box.minz);
+
+        bounds = {box.minx, box.maxx, box.miny, box.maxy, box.minz, box.maxz};
+        return true;
+    }
+
+
     bool PointCloud::TransformPointCloud(const char *inputFileName, const char *outputFileName,
                                          float translateX = 0, float translateY = 0, float translateZ = 0) {
         std::ostringstream pipeline;
