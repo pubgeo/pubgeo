@@ -15,15 +15,8 @@
 #include <cstring>
 #include <algorithm>
 
-#ifdef WIN32
 #include "gdal_priv.h"
 #include "ogr_spatialref.h"
-#else
-
-#include <gdal/gdal_priv.h>
-#include "gdal/ogr_spatialref.h"
-
-#endif
 
 #include "util.h"
 #include "PointCloud.h"
