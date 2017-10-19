@@ -41,6 +41,26 @@ namespace pubgeo {
                 std::memset(data[y], 0, width * bands * sizeof(TYPE));
             }
         }
+
+        // Perform a deep copy of an image
+        void Clone(const Image<TYPE>* im) {
+            Deallocate();
+
+            // Copy members
+            width = im->width;
+            height = im->height;
+            bands = im->bands;
+            scale = im->scale;
+            offset = im->offset;
+
+            // Deep copy of data
+            // Note: not using Allocate so we can skip the memset
+            data = new TYPE *[height];
+            for (unsigned int y = 0; y < height; y++) {
+                data[y] = new TYPE[width * bands];
+                std::memcpy(data[y], im->data[y], width * bands * sizeof(TYPE));
+            }
+        }
     };
 }
 #endif //PUBGEO_IMAGE_H
