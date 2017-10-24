@@ -88,8 +88,8 @@ int main(int argc, char **argv) {
         bool ok = dsmImage.read(readFileName);
         if (!ok) return -1;
 
-        // Clone DSM
-        minImage.Clone(&dsmImage);
+        // Copy DSM
+        minImage = dsmImage;
 
         // Min filter, replacing only points differing by more than the AGL threshold.
         minImage.minFilter(4, (unsigned int) (agl_meters / minImage.scale));
@@ -134,30 +134,20 @@ int main(int argc, char **argv) {
         minImage.write(minOutFileName, true);
 #endif
         // Find many of the trees by comparing MIN and MAX. Set their values to void.
-        for (unsigned int j = 0; j < dsmImage.height; j++) {
-            for (unsigned int i = 0; i < dsmImage.width; i++) {
-                float minValue = (float) minImage.data[j][i];
+        shr3d::OrthoImage<unsigned short> varImage = dsmImage - minImage;
+        unsigned short maxTreeHeightScaled = (40.0 / minImage.scale);
+        unsigned short threshold = (dz_meters / dsmImage.scale);
 
-                // This check is to avoid penalizing spurious returns under very tall buildings.
-                // CAUTION: This is a hack to address an observed lidar sensor issue and may not generalize well.
-                if (((float) dsmImage.data[j][i] - minValue) < (40.0 / minImage.scale)) {
-                    // If this is in the trees, then set to void.
-                    bool found = false;
-                    double threshold = dz_meters / dsmImage.scale;
-                    unsigned int i1 = MAX(0, i - 1);
-                    unsigned int i2 = MIN(i + 1, dsmImage.width - 1);
-                    unsigned int j1 = MAX(0, j - 1);
-                    unsigned int j2 = MIN(j + 1, dsmImage.height - 1);
-                    for (unsigned int jj = j1; jj <= j2; jj++) {
-                        for (unsigned int ii = i1; ii <= i2; ii++) {
-                            float diff = (float) dsmImage.data[jj][ii] - minValue;
-                            if (diff < threshold) found = true;
-                        }
-                    }
-                    if (!found) dsmImage.data[j][i] = 0;
-                }
+        // Apply tree filter
+        shr3d::Image<unsigned short>::filter(&dsmImage, &varImage,
+                [&](unsigned short* val, const unsigned short& ref, std::vector<unsigned short> &ngbrs) {
+            // CAUTION: This is a hack to address an observed lidar sensor issue and may not generalize well.
+            if (ref <= maxTreeHeightScaled) {
+                // Set dsm to void if none of the neighbors are solid (var is < threshold)
+                if (std::none_of(ngbrs.begin(), ngbrs.end(), [&](unsigned short v){ return v<=threshold; }))
+                    *val = 0;
             }
-        }
+        }, 1, 0, false);
 
         // Write the DSM2 image as FLOAT.
 #ifdef DEBUG
@@ -190,21 +180,8 @@ int main(int argc, char **argv) {
     labelImage.zone = dsmImage.zone;
     labelImage.gsd = dsmImage.gsd;
 
-    // Allocate a DTM image as SHORT and copy in the DSM values.
-    shr3d::OrthoImage<unsigned short> dtmImage;
-    dtmImage.Allocate(dsmImage.width, dsmImage.height);
-    dtmImage.easting = dsmImage.easting;
-    dtmImage.northing = dsmImage.northing;
-    dtmImage.zone = dsmImage.zone;
-    dtmImage.gsd = dsmImage.gsd;
-    dtmImage.scale = dsmImage.scale;
-    dtmImage.offset = dsmImage.offset;
-    dtmImage.bands = dsmImage.bands;
-    for (unsigned int j = 0; j < dsmImage.height; j++) {
-        for (unsigned int i = 0; i < dsmImage.width; i++) {
-            dtmImage.data[j][i] = minImage.data[j][i];
-        }
-    }
+    // Allocate a DTM image as SHORT and copy in the Min DSM values.
+    shr3d::OrthoImage<unsigned short> dtmImage(minImage);
 
     // Classify ground points.
     shr3d::Shr3dder::classifyGround(labelImage, dsmImage, dtmImage, dh_bins, dz_short);

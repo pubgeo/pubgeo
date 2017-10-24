@@ -14,6 +14,7 @@
 #include <typeinfo>
 #include <cstring>
 #include <algorithm>
+#include <type_traits>
 
 #ifdef WIN32
 #include "gdal_priv.h"
@@ -41,22 +42,18 @@ namespace pubgeo {
     class OrthoImage : public Image<TYPE> {
 
     public:
+        typedef typename std::make_signed<TYPE>::type STYPE; // Define a signed version of TYPE
 
         double easting;
         double northing;
         int zone;
         float gsd;
 
-        // Constructor
-        OrthoImage() {
-            memset(this, 0, sizeof(OrthoImage));
-            this->scale = 1.0f;
-        }
+        // Default constructor
+        OrthoImage() : Image<TYPE>(), easting(0), northing(0), zone(0), gsd(0) {}
 
         // Destructor
-        ~OrthoImage() {
-            this->Deallocate();
-        }
+        ~OrthoImage() {}
 
         // Read any GDAL-supported image.
         bool read(char *fileName) {
@@ -467,9 +464,9 @@ namespace pubgeo {
                                 // Average neighboring pixels from above.
                                 float z = 0;
                                 int ct = 0;
-                                for (unsigned int jj = MAX(0, j2 - 1);
+                                for (unsigned int jj = j2<1 ? 0 : j2-1;
                                      jj <= MIN(j2 + 1, pyramid[k + 1]->height - 1); jj++) {
-                                    for (unsigned int ii = MAX(0, i2 - 1);
+                                    for (unsigned int ii = i2<1 ? 0 : i2-1;
                                          ii <= MIN(i2 + 1, pyramid[k + 1]->width - 1); ii++) {
                                         z += pyramid[k + 1]->data[jj][ii];
                                         ct++;
@@ -490,127 +487,79 @@ namespace pubgeo {
         }
 
         // Apply a median filter to an image.
-        void medianFilter(int rad, unsigned int dzShort) {
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    // Skip if void.
-                    if (this->data[j][i] == 0) continue;
-
-                    // Define bounds;
-                    unsigned int i1 = MAX(0, i - rad);
-                    unsigned int i2 = MIN(i + rad, this->width - 1);
-                    unsigned int j1 = MAX(0, j - rad);
-                    unsigned int j2 = MIN(j + rad, this->height - 1);
-
-                    // Add valid values to the list.
-                    std::vector<unsigned short> values;
-                    for (unsigned int jj = j1; jj <= j2; jj++) {
-                        for (unsigned int ii = i1; ii <= i2; ii++) {
-                            if (this->data[jj][ii] != 0) {
-                                values.push_back(this->data[jj][ii]);
-                            }
-                        }
-                    }
-
-                    // Find the median value.
-                    unsigned long num = values.size();
-                    if (num > 0) {
-                        std::sort(values.begin(), values.end());
-                        unsigned short medianValue = values[num / 2];
-                        if (fabs(float(medianValue) - float(this->data[j][i])) > dzShort)
-                            this->data[j][i] = medianValue;
-                    }
-                }
-            }
+        void medianFilter(int rad, TYPE dzScaled) {
+            // Apply filter to the image
+            // WARNING: this usage is not ideal, as it's modifying the image as it's using it
+            Image<TYPE>::filter(this, this, [&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
+                // Find median
+                size_t ix = ngbrs.size() / 2;
+                std::partial_sort(ngbrs.begin(), ngbrs.begin() + (ix + 1), ngbrs.end());
+                STYPE medianValue = static_cast<STYPE>(ngbrs[ix]);
+                // Only replace if it differs by more than dz from the median
+                if (abs(medianValue - static_cast<STYPE>(ref)) > dzScaled)
+                    *val = medianValue;
+            }, rad);
         }
 
         // Apply a minimum filter to an image.
-        void minFilter(int rad, unsigned int dzShort = 0) {
-            OrthoImage<TYPE> tempImage;
-            tempImage.Allocate(this->width, this->height);
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    tempImage.data[j][i] = this->data[j][i];
-                }
-            }
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    // Skip if void.
-                    if (this->data[j][i] == 0) continue;
-
-                    // Define bounds;
-                    unsigned int i1 = MAX(0, i - rad);
-                    unsigned int i2 = MIN(i + rad, this->width - 1);
-                    unsigned int j1 = MAX(0, j - rad);
-                    unsigned int j2 = MIN(j + rad, this->height - 1);
-
-                    // Check all neighbors.
-                    for (unsigned int jj = j1; jj <= j2; jj++) {
-                        for (unsigned int ii = i1; ii <= i2; ii++) {
-                            if (this->data[jj][ii] != 0) {
-                                if (this->data[jj][ii] < tempImage.data[j][i])
-                                    tempImage.data[j][i] = this->data[jj][ii];
-                            }
-                        }
-                    }
-                }
-            }
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    if (this->data[j][i] > tempImage.data[j][i] + dzShort)
-                        this->data[j][i] = tempImage.data[j][i];
-                }
-            }
+        void minFilter(int rad, TYPE dzScaled = 0) {
+            // Apply filter to the image
+            Image<TYPE>::filter([&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
+                // Find minimum
+                TYPE minValue = *min_element(ngbrs.begin(),ngbrs.end());
+                // Only replace if it's more than dz above the minimum
+                if (ref > minValue + dzScaled)
+                    *val = minValue;
+            }, rad);
         }
 
-        void edgeFilter(int dzShort) {
-            OrthoImage<TYPE> tempImage;
-            tempImage.Allocate(this->width, this->height);
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    tempImage.data[j][i] = this->data[j][i];
+        void edgeFilter(TYPE dzScaled) {
+            // Apply filter to the image
+            Image<TYPE>::filter([&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
+                // Set void if any neighbor differs by more than dz
+                if (std::any_of(ngbrs.begin(), ngbrs.end(), [&](TYPE ngbr){ return abs(static_cast<STYPE>(ngbr) - static_cast<STYPE>(ref)) > dzScaled; })) {
+                    *val = 0;
                 }
-            }
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    // Skip if void.
-                    if (this->data[j][i] == 0) continue;
-
-                    // Define bounds;
-                    unsigned int i1 = MAX(0, i - 1);
-                    unsigned int i2 = MIN(i + 1, this->width - 1);
-                    unsigned int j1 = MAX(0, j - 1);
-                    unsigned int j2 = MIN(j + 1, this->height - 1);
-
-                    // If there's an edge with any neighbor, then remove.
-                    for (unsigned int jj = j1; jj <= j2; jj++) {
-                        for (unsigned int ii = i1; ii <= i2; ii++) {
-                            if (fabs(float(this->data[jj][ii] - this->data[j][i])) > dzShort) {
-                                tempImage.data[j][i] = 0;
-                            }
-                        }
-                    }
-                }
-            }
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    this->data[j][i] = tempImage.data[j][i];
-                }
-            }
+            }, 1, 0, false);
         }
 
-        // Perform a deep copy of an image
-        void Clone(const OrthoImage<TYPE>* im) {
-            // Copy base class members
-            Image<TYPE>::Clone(im);
-
-            // Copy subclass members
-            easting = im->easting;
-            northing = im->northing;
-            zone = im->zone;
-            gsd = im->gsd;
+        // Provide compound assignment arithmetic operators
+        OrthoImage<TYPE>& operator +=(const OrthoImage<TYPE>& rhs) {
+            this->offset += rhs.offset;
+            float c = (rhs.scale / this->scale);
+            for (unsigned int j = 0; j < rhs.height; j++) {
+                for (unsigned int i = 0; i < rhs.width; i++) {
+                    this->data[j][i] += c*rhs.data[j][i];
+                }
+            }
+            return *this;
+        }
+        OrthoImage<TYPE>& operator -=(const OrthoImage<TYPE>& rhs) {
+            this->offset -= rhs.offset;
+            float c = (rhs.scale / this->scale);
+            for (unsigned int j = 0; j < rhs.height; j++) {
+                for (unsigned int i = 0; i < rhs.width; i++) {
+                    if (std::numeric_limits<TYPE>::is_signed || (this->data[j][i] > c*rhs.data[j][i]))
+                        this->data[j][i] -= c*rhs.data[j][i];
+                    else
+                        this->data[j][i] = 0;
+                }
+            }
+            return *this;
         }
     };
+
+    // Provide binary arithmetic operators
+    template <class TYPE>
+    inline OrthoImage<TYPE> operator+(OrthoImage<TYPE> lhs, const OrthoImage<TYPE>& rhs) {
+        lhs += rhs;
+        return lhs;
+    }
+    template <class TYPE>
+    inline OrthoImage<TYPE> operator-(OrthoImage<TYPE> lhs, const OrthoImage<TYPE>& rhs) {
+        lhs -= rhs;
+        return lhs;
+    }
 }
 
 #endif //PUBGEO_ORTHO_IMAGE_H
