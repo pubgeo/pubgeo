@@ -42,19 +42,19 @@ namespace pubgeo {
         int yOff;
         int zOff;
 
-        inline float x(int i) {
+        inline float x(int i) const {
             if (pv != nullptr)
                 return (float) (pv->getFieldAs<double>(pdal::Dimension::Id::X, i) - xOff);
             throw "Point set has not be initialized.";
         }
 
-        inline float y(int i) {
+        inline float y(int i) const {
             if (pv != nullptr)
                 return (float) (pv->getFieldAs<double>(pdal::Dimension::Id::Y, i) - yOff);
             throw "Point set has not be initialized.";
         }
 
-        inline float z(int i) {
+        inline float z(int i) const {
             if (pv != nullptr)
                 return (float) (pv->getFieldAs<double>(pdal::Dimension::Id::Z, i) - zOff);
             throw "Point set has not be initialized.";

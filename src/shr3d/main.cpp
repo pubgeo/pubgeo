@@ -103,7 +103,12 @@ int main(int argc, char **argv) {
 #endif
     } else if ((strcmp(ext, "las") == 0) || (strcmp(ext, "bpf") == 0)) {
         // First get the max Z values for the DSM.
-        bool ok = dsmImage.readFromPointCloud(inputFileName, (float) dh_meters, shr3d::MAX_VALUE);
+        // Read a PSET file (e.g., BPF or LAS).
+        shr3d::PointCloud pset;
+        bool ok = pset.Read(inputFileName);
+        if (!ok) return -1;
+
+        ok = dsmImage.readFromPointCloud(pset, (float) dh_meters, shr3d::MAX_VALUE);
         if (!ok) return -1;
 
         // Median filter, replacing only points differing by more than the AGL threshold.
@@ -118,7 +123,7 @@ int main(int argc, char **argv) {
         dsmImage.write(dsmOutFileName, true);
 
         // Now get the minimum Z values for the DTM.
-        ok = minImage.readFromPointCloud(inputFileName, (float) dh_meters, shr3d::MIN_VALUE);
+        ok = minImage.readFromPointCloud(pset, (float) dh_meters, shr3d::MIN_VALUE);
         if (!ok) return -1;
 
         // Median filter, replacing only points differing by more than the AGL threshold.

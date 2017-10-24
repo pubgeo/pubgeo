@@ -286,8 +286,11 @@ namespace pubgeo {
             // Read a PSET file (e.g., BPF or LAS).
             PointCloud pset;
             bool ok = pset.Read(fileName);
-            if (!ok) return false;
+            return ok && readFromPointCloud(pset, gsdMeters, mode);
+        }
 
+        // Create image from point cloud.
+        bool readFromPointCloud(const PointCloud& pset, float gsdMeters, MIN_MAX_TYPE mode = MIN_VALUE) {
             // Calculate scale and offset for conversion to TYPE.
             float minVal = pset.bounds.zMin - 1;    // Reserve zero for noData value
             float maxVal = pset.bounds.zMax + 1;
