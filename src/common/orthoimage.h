@@ -488,8 +488,7 @@ namespace pubgeo {
         // Apply a median filter to an image.
         void medianFilter(int rad, TYPE dzScaled) {
             // Apply filter to the image
-            // WARNING: this usage is not ideal, as it's modifying the image as it's using it
-            Image<TYPE>::filter(this, this, [&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
+            Image<TYPE>::filter([&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
                 // Find median
                 size_t ix = ngbrs.size() / 2;
                 std::partial_sort(ngbrs.begin(), ngbrs.begin() + (ix + 1), ngbrs.end());
