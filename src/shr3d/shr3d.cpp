@@ -17,7 +17,7 @@ using namespace shr3d;
 void extendObjectBoundaries(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned long> &labelImage,
                             int edgeResolution, unsigned int minDistanceShortValue) {
     // Loop enough to capture the edge resolution.
-    for (unsigned int k = 0; k < edgeResolution; k++) {
+    for (int k = 0; k < edgeResolution; k++) {
         // First, label any close neighbor LABEL_TEMP.
         for (unsigned int j = 1; j < labelImage.height - 1; j++) {
             for (unsigned int i = 1; i < labelImage.width - 1; i++) {
@@ -41,9 +41,9 @@ void extendObjectBoundaries(OrthoImage<unsigned short> &dsmImage, OrthoImage<uns
             for (unsigned int i = 0; i < labelImage.width; i++) {
                 if (labelImage.data[j][i] == LABEL_TEMP) {
                     // Check to make sure this point is also higher than one of its neighbors.
-                    unsigned int j1 = MAX(0, j - 1);
+                    unsigned int j1 = j<1 ? 0 : j-1;
                     unsigned int j2 = MIN(j + 1, labelImage.height - 1);
-                    unsigned int i1 = MAX(0, i - 1);
+                    unsigned int i1 = i<1 ? 0 : i-1;
                     unsigned int i2 = MIN(i + 1, labelImage.width - 1);
                     for (unsigned int jj = j1; jj <= j2; jj++) {
                         for (unsigned int ii = i1; ii <= i2; ii++) {
@@ -80,13 +80,10 @@ void labelObjectBoundaries(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsi
     }
 
     // Mark the label image with object boundaries.
-    int radius = 2;
     float threshold = (float) minDistanceShortValue;
-    for (unsigned int j = 0; j < labelImage.height; j++) {
-        for (unsigned int i = 0; i < labelImage.width; i++) {
+    for (int j = 0; j < (int) labelImage.height; j++) {
+        for (int i = 0; i < (int) labelImage.width; i++) {
             // Look for Z steps greater than a threshold.
-            float value = (float) dsmImage.data[j][i];
-
             // Interestingly, this works about as well as checking every step.
             for (int dj = -edgeResolution; dj <= edgeResolution; dj += edgeResolution) {
                 for (int di = -edgeResolution; di <= edgeResolution; di += edgeResolution) {
@@ -109,7 +106,7 @@ void labelObjectBoundaries(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsi
 
 // Fill inside the object countour labels if points are above the nearby ground level.
 void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned short> &dsmImage, ObjectType &obj,
-                      int edgeResolution, unsigned int dzShort) {
+                      int edgeResolution) {
     unsigned int label = obj.label;
 
     // Loop on rows, filling in labels.
@@ -136,20 +133,20 @@ void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned
         }
 
 		// If entire column is labeled, then continue.
-		if ((startIndex == 0) && (stopIndex == labelImage.width-1)) continue;
+		if ((startIndex == 0) && (stopIndex == (int) labelImage.width-1)) continue;
 
         // Get max ground level height for this row.
         // If the DSM image value is void, then the ground level value is zero, so that's ok.
         unsigned short groundLevel;
         if (startIndex == 0)
             groundLevel = dsmImage.data[j][stopIndex + 1];
-        else if (stopIndex == labelImage.width - 1)
+        else if (stopIndex == (int) labelImage.width - 1)
             groundLevel = dsmImage.data[j][startIndex - 1];
         else
             groundLevel = MAX(dsmImage.data[j][startIndex - 1], dsmImage.data[j][stopIndex + 1]);
 
         // Fill in the label for any point in between that has height above ground level.
-        for (unsigned int i = startIndex; i <= stopIndex; i++) {
+        for (unsigned int i = startIndex; (int) i <= stopIndex; i++) {
             if (dsmImage.data[j][i] > groundLevel) {
                 if (labelImage.data[j][i] != label) labelImage.data[j][i] = LABEL_IN_ONE;
             } else {
@@ -182,20 +179,20 @@ void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned
         }
 
 		// If entire row is labeled, then continue.
-		if ((startIndex == 0) && (stopIndex == labelImage.height-1)) continue;
+		if ((startIndex == 0) && (stopIndex == (int) labelImage.height-1)) continue;
 
         // Get max ground level height for this row.
         unsigned short groundLevel;
         if (startIndex == 0)
             groundLevel = dsmImage.data[stopIndex + 1][i];
-        else if (stopIndex == labelImage.height - 1)
+        else if (stopIndex == (int) labelImage.height - 1)
             groundLevel = dsmImage.data[startIndex - 1][i];
         else
             groundLevel = MAX(dsmImage.data[startIndex - 1][i], dsmImage.data[stopIndex + 1][i]);
 
         // Fill in the label for any point in between that has height above ground level.
         // This time make sure both the horizontal and vertical check pass and set to LABEL_ACCEPTED.
-        for (unsigned int j = startIndex; j <= stopIndex; j++) {
+        for (unsigned int j = startIndex; (int) j <= stopIndex; j++) {
             if (dsmImage.data[j][i] > groundLevel) {
                 if ((labelImage.data[j][i] == label) || (labelImage.data[j][i] == LABEL_IN_ONE)) {
                     labelImage.data[j][i] = LABEL_ACCEPTED;
@@ -206,15 +203,15 @@ void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned
 
     // Erode the labels with a kernel size based on edge resolution.
     int rad = edgeResolution;
-    for (unsigned int j = MAX(0, obj.ymin - 1); j <= MIN(obj.ymax + 1, labelImage.height - 1); j++) {
-        for (unsigned int i = MAX(0, obj.xmin - 1); i <= MIN(obj.xmax + 1, labelImage.width - 1); i++) {
+    for (int j = MAX(0, obj.ymin - 1); j <= MIN(obj.ymax + 1, (int) labelImage.height - 1); j++) {
+        for (int i = MAX(0, obj.xmin - 1); i <= MIN(obj.xmax + 1, (int) labelImage.width - 1); i++) {
             if (labelImage.data[j][i] == LABEL_ACCEPTED) {
                 int i1 = MAX(i - rad, 0);
                 int i2 = MIN(i + rad, labelImage.width - 1);
                 int j1 = MAX(j - rad, 0);
                 int j2 = MIN(j + rad, labelImage.height - 1);
-                for (unsigned int jj = j1; jj <= j2; jj++) {
-                    for (unsigned int ii = i1; ii <= i2; ii++) {
+                for (int jj = j1; jj <= j2; jj++) {
+                    for (int ii = i1; ii <= i2; ii++) {
                         if (labelImage.data[jj][ii] != LABEL_ACCEPTED) labelImage.data[jj][ii] = LABEL_TEMP;
                     }
                 }
@@ -253,9 +250,8 @@ bool addNeighbors(std::vector<PixelType> &neighbors, OrthoImage<unsigned long> &
     for (size_t k = 0; k < neighbors.size(); k++) {
         unsigned int i = neighbors[k].i;
         unsigned int j = neighbors[k].j;
-        float value = (float) dsmImage.data[j][i];
-        for (unsigned int jj = MAX(0, j - 1); jj <= MIN(j + 1, labelImage.height - 1); jj++) {
-            for (unsigned int ii = MAX(0, i - 1); ii <= MIN(i + 1, labelImage.width - 1); ii++) {
+        for (unsigned int jj = j<1 ? 0 : j-1; jj <= MIN(j + 1, labelImage.height - 1); jj++) {
+            for (unsigned int ii = i<1 ? 0 : i-1; ii <= MIN(i + 1, labelImage.width - 1); ii++) {
                 // Skip if pixel is already labeled or if it is LABEL_GROUND.
                 // Note that non-ground labels are initialized with 1.
                 if (labelImage.data[jj][ii] > 1) continue;
@@ -369,7 +365,7 @@ void Shr3dder::classifyGround(OrthoImage<unsigned long> &labelImage, OrthoImage<
 
     // Iteratively label and remove objects from the DEM.
     // Each new iteration removes debris not identified by the previous iteration.
-    int numIterations = 5;
+    unsigned int numIterations = 5;
     long maxCount = 10000 / (dsmImage.gsd * dsmImage.gsd);    // max count is in meters
     for (unsigned int k = 0; k < numIterations; k++) {
         printf("Iteration #%d\n", k + 1);
@@ -390,8 +386,8 @@ void Shr3dder::classifyGround(OrthoImage<unsigned long> &labelImage, OrthoImage<
 
         // Generate object groups and void fill them in the DEM image.
         printf("Labeling and removing objects...\n");
-        for (long i = 0; i < objects.size(); i++) {
-            fillObjectBounds(labelImage, dtmImage, objects[i], dhBins, dzShort);
+        for (size_t i = 0; i < objects.size(); i++) {
+            fillObjectBounds(labelImage, dtmImage, objects[i], dhBins);
         }
 
         // Update the label image values for easy viewing.
@@ -431,14 +427,14 @@ void Shr3dder::classifyGround(OrthoImage<unsigned long> &labelImage, OrthoImage<
 
     // Remove any leftover single point spikes.
     printf("Removing spikes...\n");
-    for (unsigned int j = 0; j < dtmImage.height; j++) {
-        for (unsigned int i = 0; i < dtmImage.width; i++) {
+    for (int j = 0; j < (int) dtmImage.height; j++) {
+        for (int i = 0; i < (int) dtmImage.width; i++) {
             float minDiff = FLT_MAX;
             for (int jj = -1; jj <= 1; jj++) {
-                int j2 = MAX(0, MIN(dsmImage.height - 1, j + jj));
+                int j2 = MAX(0, MIN((int) dsmImage.height - 1, j + jj));
                 for (int ii = -1; ii <= 1; ii++) {
                     if ((ii == 0) && (jj == 0)) continue;
-                    int i2 = MAX(0, MIN(dsmImage.width - 1, i + ii));
+                    int i2 = MAX(0, MIN((int) dsmImage.width - 1, i + ii));
                     float diff = MAX(0, (float) dtmImage.data[j][i] - (float) dtmImage.data[j2][i2]);
                     minDiff = MIN(minDiff, diff);
                 }
@@ -505,16 +501,16 @@ void Shr3dder::classifyNonGround(OrthoImage<unsigned short> &dsmImage, OrthoImag
             float meanGradient = 0.0;
             int count = 0;
             for (int j = objects[k].ymin; j <= objects[k].ymax; j++) {
-                for (unsigned int i = objects[k].xmin; i <= objects[k].xmax; i++) {
+                for (int i = objects[k].xmin; i <= objects[k].xmax; i++) {
                     if (labelImage.data[j][i] == objects[k].label) {
                         for (int jj = -1; jj <= 1; jj++) {
-                            unsigned int j2 = MAX(0, MIN(dsmImage.height - 1, j + jj));
+                            unsigned int j2 = MAX(0, MIN((int) dsmImage.height - 1, j + jj));
                             for (int ii = -1; ii <= 1; ii++) {
-                                unsigned int i2 = MAX(0, MIN(dsmImage.width - 1, i + ii));
+                                unsigned int i2 = MAX(0, MIN((int) dsmImage.width - 1, i + ii));
                                 //if (labelImage.data[j2][i2] != objects[k].label)
                                 if (labelImage.data[j2][i2] == LABEL_GROUND) {
-                                    unsigned int j3 = MAX(0, MIN(dsmImage.height - 1, j + jj * 2));
-                                    unsigned int i3 = MAX(0, MIN(dsmImage.width - 1, i + ii * 2));
+                                    unsigned int j3 = MAX(0, MIN((int) dsmImage.height - 1, j + jj * 2));
+                                    unsigned int i3 = MAX(0, MIN((int) dsmImage.width - 1, i + ii * 2));
 
                                     // These assume I'm higher than my neighbors.
                                     float myGradient = MAX(0, ((float) dsmImage.data[j][i] -
@@ -555,8 +551,8 @@ void Shr3dder::classifyNonGround(OrthoImage<unsigned short> &dsmImage, OrthoImag
                 tempImage.data[j][i] = labelImage.data[j][i];
             }
         }
-        for (int j = 0; j < labelImage.height; j++) {
-            for (int i = 0; i < labelImage.width; i++) {
+        for (int j = 0; j < (int) labelImage.height; j++) {
+            for (int i = 0; i < (int) labelImage.width; i++) {
                 if (labelImage.data[j][i] != LABEL_GROUND) {
                     // Define neighbor bounds;
                     int i1 = MAX(0, i - 1);
@@ -575,8 +571,8 @@ void Shr3dder::classifyNonGround(OrthoImage<unsigned short> &dsmImage, OrthoImag
                 }
             }
         }
-        for (int j = 0; j < labelImage.height; j++) {
-            for (int i = 0; i < labelImage.width; i++) {
+        for (int j = 0; j < (int) labelImage.height; j++) {
+            for (int i = 0; i < (int) labelImage.width; i++) {
                 if (labelImage.data[j][i] != LABEL_GROUND) {
                     // Define neighbor bounds;
                     int i1 = MAX(0, i - 1);
@@ -649,8 +645,8 @@ addClassNeighbors(std::vector<PixelType> &neighbors, OrthoImage<unsigned char> &
     for (size_t k = 0; k < neighbors.size(); k++) {
         unsigned int i = neighbors[k].i;
         unsigned int j = neighbors[k].j;
-        for (unsigned int jj = MAX(0, j - 1); jj <= MIN(j + 1, classImage.height - 1); jj++) {
-            for (unsigned int ii = MAX(0, i - 1); ii <= MIN(i + 1, classImage.width - 1); ii++) {
+        for (unsigned int jj = MAX(0, (int) j - 1); jj <= MIN(j + 1, classImage.height - 1); jj++) {
+            for (unsigned int ii = MAX(0, (int) i - 1); ii <= MIN(i + 1, classImage.width - 1); ii++) {
                 // If already labeled, then skip.
                 if (labeled.data[jj][ii] == 1) continue;
 
@@ -669,7 +665,7 @@ addClassNeighbors(std::vector<PixelType> &neighbors, OrthoImage<unsigned char> &
 
     // Update the neighbors list.
     if (newNeighbors.size() > 0) {
-        for (int k = 0; k < newNeighbors.size(); k++) {
+        for (size_t k = 0; k < newNeighbors.size(); k++) {
             neighbors.push_back(newNeighbors[k]);
         }
 //		neighbors = newNeighbors;
@@ -700,7 +696,7 @@ void Shr3dder::fillInsideBuildings(OrthoImage<unsigned char> &classImage) {
 
             // Check all pixels for neighboring labels.
             bool inside = true;
-            for (int k = 0; k < neighbors.size(); k++) {
+            for (size_t k = 0; k < neighbors.size(); k++) {
                 long i1 = neighbors[k].i;
                 long j1 = neighbors[k].j;
                 for (long jj = MAX(0, j1 - 1); jj <= MIN(j1 + 1, classImage.height - 1); jj++) {
@@ -714,7 +710,7 @@ void Shr3dder::fillInsideBuildings(OrthoImage<unsigned char> &classImage) {
 
             // If the region is completely inside a building region, then fill it.
             if (inside) {
-                for (int k = 0; k < neighbors.size(); k++) {
+                for (size_t k = 0; k < neighbors.size(); k++) {
                     numFilled++;
                     classImage.data[neighbors[k].j][neighbors[k].i] = LAS_BUILDING;
                 }

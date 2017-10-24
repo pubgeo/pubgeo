@@ -36,7 +36,6 @@ int main(int argc, char **argv) {
     }
 
     // Get command line arguments and confirm they are valid.
-    double gsd_meters = 0.0;
     double dh_meters = 0.0;
     double dz_meters = 0.0;
     double agl_meters = 0.0;
@@ -44,7 +43,7 @@ int main(int argc, char **argv) {
     bool egm96 = false;
     bool convert = false;
     char inputFileName[1024];
-    sprintf(inputFileName, argv[1]);
+    strcpy(inputFileName, argv[1]);
     for (int i = 2; i < argc; i++) {
         if (strstr(argv[i], "DH=")) { dh_meters = atof(&(argv[i][3])); }
         if (strstr(argv[i], "DZ=")) { dz_meters = atof(&(argv[i][3])); }
@@ -71,7 +70,7 @@ int main(int argc, char **argv) {
     strcpy(readFileName, inputFileName);
     if (convert) {
         char cmd[4096];
-        sprintf(readFileName, "temp.tif\0");
+        sprintf(readFileName, "temp.tif");
         sprintf(cmd, ".\\gdal\\gdal_translate %s temp.tif\n", inputFileName);
         system(cmd);
     }
@@ -99,7 +98,7 @@ int main(int argc, char **argv) {
 #ifdef DEBUG
         // Write the MIN image as FLOAT.
         char minOutFileName[1024];
-        sprintf(minOutFileName, "%s_MIN.tif\0", inputFileName);
+        sprintf(minOutFileName, "%s_MIN.tif", inputFileName);
         minImage.write(minOutFileName, true);
 #endif
     } else if ((strcmp(ext, "las") == 0) || (strcmp(ext, "bpf") == 0)) {
@@ -115,7 +114,7 @@ int main(int argc, char **argv) {
 
         // Write the DSM image as FLOAT.
         char dsmOutFileName[1024];
-        sprintf(dsmOutFileName, "%s_DSM.tif\0", inputFileName);
+        sprintf(dsmOutFileName, "%s_DSM.tif", inputFileName);
         dsmImage.write(dsmOutFileName, true);
 
         // Now get the minimum Z values for the DTM.
@@ -130,7 +129,7 @@ int main(int argc, char **argv) {
 #ifdef DEBUG
         // Write the MIN image as FLOAT.
         char minOutFileName[1024];
-        sprintf(minOutFileName, "%s_MIN.tif\0", inputFileName);
+        sprintf(minOutFileName, "%s_MIN.tif", inputFileName);
         minImage.write(minOutFileName, true);
 #endif
         // Find many of the trees by comparing MIN and MAX. Set their values to void.
@@ -152,7 +151,7 @@ int main(int argc, char **argv) {
         // Write the DSM2 image as FLOAT.
 #ifdef DEBUG
         char dsm2OutFileName[1024];
-        sprintf(dsm2OutFileName, "%s_DSM2.tif\0", inputFileName);
+        sprintf(dsm2OutFileName, "%s_DSM2.tif", inputFileName);
         dsmImage.write(dsm2OutFileName, true);
 #endif
     } else {
@@ -205,7 +204,7 @@ int main(int argc, char **argv) {
 
     // Write the DTM image as FLOAT.
     char dtmOutFileName[1024];
-    sprintf(dtmOutFileName, "%s_DTM.tif\0", inputFileName);
+    sprintf(dtmOutFileName, "%s_DTM.tif", inputFileName);
     dtmImage.write(dtmOutFileName, true, egm96);
 
     // Produce a classification raster image with LAS standard point classes.
@@ -239,14 +238,14 @@ int main(int argc, char **argv) {
 
     // Write the classification image.
     char classOutFileName[1024];
-    sprintf(classOutFileName, "%s_class.tif\0", inputFileName);
+    sprintf(classOutFileName, "%s_class.tif", inputFileName);
     classImage.write(classOutFileName, false, egm96);
     for (unsigned int j = 0; j < classImage.height; j++) {
         for (unsigned int i = 0; i < classImage.width; i++) {
             if (classImage.data[j][i] != LAS_BUILDING) classImage.data[j][i] = 0;
         }
     }
-    sprintf(classOutFileName, "%s_buildings.tif\0", inputFileName);
+    sprintf(classOutFileName, "%s_buildings.tif", inputFileName);
     classImage.write(classOutFileName, false, egm96);
 
     // Report total elapsed time.

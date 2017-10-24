@@ -233,9 +233,8 @@ namespace pubgeo {
             char *pszSRS_WKT = NULL;
             oSRS.SetProjCS("UTM (WGS84)");
             oSRS.SetUTM(abs(this->zone), (this->zone > 0));
-            int theZone = 255;
             int theZoneIsNorthern = 255;
-            theZone = oSRS.GetUTMZone(&theZoneIsNorthern);
+            oSRS.GetUTMZone(&theZoneIsNorthern);
             oSRS.SetWellKnownGeogCS("WGS84");
             if (!egm96)
                 oSRS.SetVertCS("WGS 84", "World Geodetic System 1984");

@@ -12,7 +12,7 @@ std::string buildPipelineStr(const char *fileName) {
 }
 
 namespace pubgeo {
-    PointCloud::PointCloud() : executor(nullptr), pv(nullptr), zone(0), xOff(0), yOff(0), zOff(0), numPoints(0) {
+    PointCloud::PointCloud() : zone(0), numPoints(0), xOff(0), yOff(0), zOff(0), executor(nullptr), pv(nullptr) {
         bounds = MinMaxXYZ{0, 0, 0, 0, 0, 0};
     }
 
