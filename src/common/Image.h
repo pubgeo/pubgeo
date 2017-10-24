@@ -8,6 +8,8 @@
 #define PUBGEO_IMAGE_H
 
 #include <cstring>
+#include <thread>
+#include <vector>
 namespace pubgeo {
     template<class TYPE>
     class Image {
@@ -124,42 +126,53 @@ namespace pubgeo {
          * voidVal  See definition in non-static version of this function
          * skipVoids    See definition in non-static version of this function
          */
-        template <class FilterFunction>
-        static void filter(Image<TYPE>* dest, const Image<TYPE>* src, FilterFunction filterFunc, int rad = 1, TYPE voidVal = 0, bool skipVoids = true) {
-            // Double check that src and dest are the same size
+        template <class FilterFunction, class DEST_TYPE>
+        static void filter(Image<DEST_TYPE>* dest, const Image<TYPE>* src, FilterFunction filterFunc, int rad = 1, TYPE voidVal = 0, bool skipVoids = true) {
+            // TODO: Double check that src and dest are the same size
 
-            // Create vector for neighbors
-            std::vector<TYPE> ngbrs;
-            ngbrs.reserve((2*rad+1)*(2*rad+1));
+            std::vector<std::thread> workers;
+            unsigned int N = 1;//std::min(std::thread::hardware_concurrency(),src->height);
+            for (unsigned int k = 0; k < N; ++k) {
+                workers.push_back(std::thread([=](){
 
-            for (unsigned int j = 0; j < src->height; j++) {
-                // Define row bounds:
-                unsigned int j1 = j < rad ? 0 : j - rad;
-                unsigned int j2 = std::min(j + rad, src->height - 1);
+                    // Create vector for neighbors
+                    std::vector<TYPE> ngbrs;
+                    ngbrs.reserve((2*rad+1)*(2*rad+1));
 
-                for (unsigned int i = 0; i < src->width; i++) {
-                    // Skip if void.
-                    if (skipVoids && (src->data[j][i] == voidVal)) continue;
+                    for (unsigned int j = k; j < src->height; j+=N) {
+                        // Define row bounds:
+                        unsigned int j1 = std::max((int) j - rad, 0);
+                        unsigned int j2 = std::min(j + rad, src->height - 1);
 
-                    // Define bounds;
-                    unsigned int i1 = i < rad ? 0 : i - rad;
-                    unsigned int i2 = std::min(i + rad, src->width - 1);
+                        for (unsigned int i = 0; i < src->width; i++) {
+                            // Skip if void.
+                            if (skipVoids && (src->data[j][i] == voidVal)) continue;
 
-                    // Add valid values to the list.
-                    for (unsigned int jj = j1; jj <= j2; jj++) {
-                        for (unsigned int ii = i1; ii <= i2; ii++) {
-                            if (!skipVoids || (src->data[jj][ii] != voidVal)) {
-                                ngbrs.push_back(src->data[jj][ii]);
+                            // Define bounds;
+                            unsigned int i1 = std::max((int) i - rad, 0);
+                            unsigned int i2 = std::min(i + rad, src->width - 1);
+
+                            // Add valid values to the list.
+                            for (unsigned int jj = j1; jj <= j2; jj++) {
+                                for (unsigned int ii = i1; ii <= i2; ii++) {
+                                    if (!skipVoids || (src->data[jj][ii] != voidVal)) {
+                                        ngbrs.push_back(src->data[jj][ii]);
+                                    }
+                                }
                             }
+
+                            // Apply filter
+                            filterFunc(&(dest->data[j][i]), src->data[j][i], ngbrs);
+
+                            // Clear neighbors list
+                            ngbrs.clear();
                         }
                     }
+                }));
+            }
 
-                    // Apply filter
-                    filterFunc(&(dest->data[j][i]), src->data[j][i], ngbrs);
-
-                    // Clear neighbors list
-                    ngbrs.clear();
-                }
+            for (unsigned int k = 0; k < N; ++k) {
+                workers.at(k).join();
             }
         }
     };
