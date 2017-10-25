@@ -191,10 +191,12 @@ int main(int argc, char **argv) {
     shr3d::Shr3dder::classifyGround(labelImage, dsmImage, dtmImage, dh_bins, dz_short);
 
     // For DSM voids, also set DTM value to void.
+    // Note: because we've changed the DSM by this point (setting voids where all the trees are),
+    //  use the minImage which will have the same voids as the original DSM
     printf("Setting DTM values to VOID where DSM is VOID...\n");
-    for (unsigned int j = 0; j < dsmImage.height; j++) {
-        for (unsigned int i = 0; i < dsmImage.width; i++) {
-            if (dsmImage.data[j][i] == 0) dtmImage.data[j][i] = 0;
+    for (unsigned int j = 0; j < minImage.height; j++) {
+        for (unsigned int i = 0; i < minImage.width; i++) {
+            if (minImage.data[j][i] == 0) dtmImage.data[j][i] = 0;
         }
     }
 
