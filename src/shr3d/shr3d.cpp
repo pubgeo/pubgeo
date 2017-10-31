@@ -104,19 +104,57 @@ void labelObjectBoundaries(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsi
     }
 }
 
+bool findObjectBoundsInColumn(OrthoImage<unsigned long> &labelImage, ObjectType &obj, unsigned int column, int &min_row, int &max_row) {
+    min_row = -1;
+    max_row = -1;
+
+    int j1 = MAX(0, obj.ymin - 1);
+    int j2 = MIN(obj.ymax + 1, labelImage.height - 1);
+
+    // Find 1st row with matching label
+    for (int j = j1; j <= j2; j++) {
+        if (labelImage.data[j][column] == obj.label) {
+            min_row = j;
+            break;
+        }
+    }
+
+    // If no labels in this row, then continue.
+    if (min_row == -1)
+        return false;
+
+    // Find last row with matching label
+    for (int j = j2; j >= min_row; j--) {
+        if (labelImage.data[j][column] == obj.label) {
+            max_row = j;
+            break;
+        }
+    }
+    return true;
+}
+
 // Fill inside the object countour labels if points are above the nearby ground level.
-void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned short> &dsmImage, ObjectType &obj,
+void fillObjectBounds(OrthoImage<unsigned long> &newLabelImage, OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned short> &dsmImage, ObjectType &obj,
                       int edgeResolution) {
     unsigned int label = obj.label;
+
+    // For the case when the object is on the left or right edge of the image, find which rows on the edge are within the image
+    int lmin,lmax,rmin,rmax;
+    bool ledge = (obj.xmin-1 <= 0) && findObjectBoundsInColumn(labelImage, obj, 0, lmin, lmax);
+    bool redge = (obj.xmax+1 >= labelImage.width-1) && findObjectBoundsInColumn(labelImage, obj, labelImage.width-1, rmin, rmax);
 
     // Loop on rows, filling in labels.
     for (unsigned int j = MAX(0, obj.ymin - 1); j <= MIN(obj.ymax + 1, labelImage.height - 1); j++) {
         // Get start index.
         int startIndex = -1;
-        for (unsigned int i = MAX(0, obj.xmin - 1); i <= MIN(obj.xmax + 1, labelImage.width - 1); i++) {
-            if (labelImage.data[j][i] == label) {
-                startIndex = i;
-                break;
+        if (ledge && (int) j >= lmin && (int) j <= lmax) {
+            startIndex = 0; // If the object is on the left edge and this row is within the bounds, start the index at the edge
+        } else {
+            for (unsigned int i = MAX(0, obj.xmin - 1); i <= MIN(obj.xmax + 1, labelImage.width - 1); i++) {
+                if (labelImage.data[j][i] == label) {
+                    startIndex = i;
+                    break;
+                }
             }
         }
 
@@ -125,10 +163,14 @@ void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned
 
         // Get stop index.
         int stopIndex = -1;
-        for (unsigned int i = MIN(obj.xmax + 1, labelImage.width - 1); i >= MAX(0, obj.xmin - 1); i--) {
-            if (labelImage.data[j][i] == label) {
-                stopIndex = i;
-                break;
+        if (redge && (int) j >= rmin && (int) j <= rmax) {
+            stopIndex = labelImage.width - 1; // If the object is on the right edge and this row is within the bounds, have the index stop at the edge
+        } else {
+            for (int i = MIN(obj.xmax + 1, labelImage.width - 1); i >= MAX(0, obj.xmin - 1); i--) {
+                if (labelImage.data[j][i] == label) {
+                    stopIndex = i;
+                    break;
+                }
             }
         }
 
@@ -148,35 +190,19 @@ void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned
         // Fill in the label for any point in between that has height above ground level.
         for (unsigned int i = startIndex; (int) i <= stopIndex; i++) {
             if (dsmImage.data[j][i] > groundLevel) {
-                if (labelImage.data[j][i] != label) labelImage.data[j][i] = LABEL_IN_ONE;
+                if (labelImage.data[j][i] != label && newLabelImage.data[j][i] != LABEL_OBJECT) newLabelImage.data[j][i] = LABEL_IN_ONE;
             } else {
-                if (labelImage.data[j][i] == label) labelImage.data[j][i] = LABEL_GROUND;
+                if (labelImage.data[j][i] == label && newLabelImage.data[j][i] != LABEL_OBJECT) newLabelImage.data[j][i] = LABEL_GROUND;
             }
         }
     }
 
     // Loop on columns, filling in labels.
     for (unsigned int i = MAX(0, obj.xmin - 1); i <= MIN(obj.xmax + 1, labelImage.width - 1); i++) {
-        // Get start index.
-        int startIndex = -1;
-        for (unsigned int j = MAX(0, obj.ymin - 1); j <= MIN(obj.ymax + 1, labelImage.height - 1); j++) {
-            if (labelImage.data[j][i] == label) {
-                startIndex = j;
-                break;
-            }
-        }
-
-        // If no labels in this row, then continue.
-        if (startIndex == -1) continue;
-
-        // Get stop index.
-        int stopIndex = -1;
-        for (unsigned int j = MIN(obj.ymax + 1, labelImage.height - 1); j >= MAX(0, obj.ymin - 1); j--) {
-            if (labelImage.data[j][i] == label) {
-                stopIndex = j;
-                break;
-            }
-        }
+        // Get start & stop indices
+        int startIndex, stopIndex;
+        if (!findObjectBoundsInColumn(labelImage, obj, i, startIndex, stopIndex))
+            continue;
 
 		// If entire row is labeled, then continue.
 		if ((startIndex == 0) && (stopIndex == (int) labelImage.height-1)) continue;
@@ -194,8 +220,8 @@ void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned
         // This time make sure both the horizontal and vertical check pass and set to LABEL_ACCEPTED.
         for (unsigned int j = startIndex; (int) j <= stopIndex; j++) {
             if (dsmImage.data[j][i] > groundLevel) {
-                if ((labelImage.data[j][i] == label) || (labelImage.data[j][i] == LABEL_IN_ONE)) {
-                    labelImage.data[j][i] = LABEL_ACCEPTED;
+                if (((labelImage.data[j][i] == label) || (newLabelImage.data[j][i] == LABEL_IN_ONE)) && newLabelImage.data[j][i] != LABEL_OBJECT) {
+                    newLabelImage.data[j][i] = LABEL_ACCEPTED;
                 }
             }
         }
@@ -205,14 +231,14 @@ void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned
     int rad = edgeResolution;
     for (int j = MAX(0, obj.ymin - 1); j <= MIN(obj.ymax + 1, (int) labelImage.height - 1); j++) {
         for (int i = MAX(0, obj.xmin - 1); i <= MIN(obj.xmax + 1, (int) labelImage.width - 1); i++) {
-            if (labelImage.data[j][i] == LABEL_ACCEPTED) {
+            if (newLabelImage.data[j][i] == LABEL_ACCEPTED) {
                 int i1 = MAX(i - rad, 0);
                 int i2 = MIN(i + rad, labelImage.width - 1);
                 int j1 = MAX(j - rad, 0);
                 int j2 = MIN(j + rad, labelImage.height - 1);
                 for (int jj = j1; jj <= j2; jj++) {
                     for (int ii = i1; ii <= i2; ii++) {
-                        if (labelImage.data[jj][ii] != LABEL_ACCEPTED) labelImage.data[jj][ii] = LABEL_TEMP;
+                        if (newLabelImage.data[jj][ii] != LABEL_ACCEPTED && newLabelImage.data[j][i] != LABEL_OBJECT) newLabelImage.data[jj][ii] = LABEL_TEMP;
                     }
                 }
             }
@@ -227,8 +253,8 @@ void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned
 
     for (unsigned int j = obj.ymin; j <= obj.ymax; j++) {
         for (unsigned int i = obj.xmin; i <= obj.xmax; i++) {
-            if (labelImage.data[j][i] == LABEL_TEMP) {
-                labelImage.data[j][i] = LABEL_ACCEPTED;
+            if (newLabelImage.data[j][i] == LABEL_TEMP) {
+                newLabelImage.data[j][i] = LABEL_ACCEPTED;
             }
         }
     }
@@ -236,8 +262,8 @@ void fillObjectBounds(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned
     // Finish up the labels.
     for (unsigned int j = MAX(0, obj.ymin - 1); j <= MIN(obj.ymax + 1, labelImage.height - 1); j++) {
         for (unsigned int i = MAX(0, obj.xmin - 1); i <= MIN(obj.xmax + 1, labelImage.width - 1); i++) {
-            if (labelImage.data[j][i] == label) labelImage.data[j][i] = LABEL_GROUND;
-            if (labelImage.data[j][i] == LABEL_ACCEPTED) labelImage.data[j][i] = LABEL_OBJECT;
+            if (newLabelImage.data[j][i] == label) newLabelImage.data[j][i] = LABEL_GROUND;
+            if (newLabelImage.data[j][i] == LABEL_ACCEPTED) newLabelImage.data[j][i] = LABEL_OBJECT;
         }
     }
 }
@@ -386,9 +412,11 @@ void Shr3dder::classifyGround(OrthoImage<unsigned long> &labelImage, OrthoImage<
 
         // Generate object groups and void fill them in the DEM image.
         printf("Labeling and removing objects...\n");
+        OrthoImage<unsigned long> newlabelImage(labelImage);
         for (size_t i = 0; i < objects.size(); i++) {
-            fillObjectBounds(labelImage, dtmImage, objects[i], dhBins);
+            fillObjectBounds(newlabelImage,labelImage, dtmImage, objects[i], dhBins);
         }
+        swap(newlabelImage,labelImage);
 
         // Update the label image values for easy viewing.
         printf("Finishing label image for display...\n");
@@ -417,7 +445,7 @@ void Shr3dder::classifyGround(OrthoImage<unsigned long> &labelImage, OrthoImage<
     // If any DTM points are above the DSM, then restore the DSM values.
     for (unsigned int j = 0; j < dtmImage.height; j++) {
         for (unsigned int i = 0; i < dtmImage.width; i++) {
-            if (dtmImage.data[j][i] >= dsmImage.data[j][i]) {
+            if (dtmImage.data[j][i] >= dsmImage.data[j][i] && dsmImage.data[j][i] != 0) {
                 dtmImage.data[j][i] = dsmImage.data[j][i];
                 labelImage.data[j][i] = LABEL_GROUND;
                 voidImage.data[j][i] = 0;
