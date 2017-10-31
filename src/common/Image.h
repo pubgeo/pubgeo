@@ -175,6 +175,71 @@ namespace pubgeo {
                 workers.at(k).join();
             }
         }
+
+        /**
+         * Apply a filter to two source images, storing results in the destination image
+         *
+         * dest Destination image; where results are stored
+         * A    First source image; where reference and neighbor values are pulled from
+         * B    Second source image; where reference and neighbor values are pulled from
+         * selectFunc   Function that determines whether the filter function should be applied
+         *  based soley on the reference values from images A and B.  This function must satisfy
+         *  the following template: bool(std::pair<TYPE_A, TYPE_B>)
+         * filterFunc   Function that operates on reference and neighbor values from images A and
+         *  B and computes a single filtered value.  This function must satisfy the following
+         *  template: void(TYPE&, const std::pair<TYPE_A, TYPE_B>&, std::vector<std::pair<TYPE_A, TYPE_B>>&)
+         *  where the first argument is the destination value, the second is the reference values from
+         *  A and B, and the third argument is the list of neighbor values from A and B
+         * rad  The distance in each direction that neighbors should be pulled from;
+         *  e.g. rad=0 would only return 1 neighbor (itself), rad=1 would return 9, rad=2 would return 25, etc.
+         */
+        template <class SelectionFunction, class ImFilterFunction, class TYPE_A, class TYPE_B>
+        static void filter2(Image<TYPE>* dest, const Image<TYPE_A>* A, const Image<TYPE_B>* B,
+                SelectionFunction selectFunc, ImFilterFunction filterFunc, int rad = 1) {
+            std::vector<std::thread> workers;
+            unsigned int N = std::min(std::thread::hardware_concurrency(), dest->height);
+            for (unsigned int k = 0; k < N; ++k) {
+                workers.push_back(std::thread([=](){
+
+                    // Create vector for neighbors
+                    std::vector<std::pair<TYPE_A,TYPE_B>> ngbrs;
+                    ngbrs.reserve((2*rad+1)*(2*rad+1));
+
+                    for (unsigned int j = k; j < dest->height; j+=N) {
+                        // Define row bounds:
+                        unsigned int j1 = std::max((int) j - rad, 0);
+                        unsigned int j2 = std::min(j + rad, dest->height - 1);
+
+                        for (unsigned int i = 0; i < dest->width; i++) {
+                            // Define column bounds:
+                            unsigned int i1 = std::max((int) i - rad, 0);
+                            unsigned int i2 = std::min(i + rad, dest->width - 1);
+
+                            std::pair<TYPE_A,TYPE_B> ref = std::make_pair(A->data[j][i],B->data[j][i]);
+                            if (selectFunc(ref)) {
+
+                                // Add valid values to the list.
+                                for (unsigned int jj = j1; jj <= j2; jj++) {
+                                    for (unsigned int ii = i1; ii <= i2; ii++) {
+                                        ngbrs.emplace_back(A->data[jj][ii],B->data[jj][ii]);
+                                    }
+                                }
+
+                                // Apply filter
+                                filterFunc(&(dest->data[j][i]), ref, ngbrs);
+
+                                // Clear neighbors list
+                                ngbrs.clear();
+                            }
+                        }
+                    }
+                }));
+            }
+
+            for (unsigned int k = 0; k < N; ++k) {
+                workers.at(k).join();
+            }
+        }
     };
 }
 #endif //PUBGEO_IMAGE_H
