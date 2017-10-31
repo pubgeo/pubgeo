@@ -15,6 +15,7 @@
 #include <cstring>
 #include <algorithm>
 #include <type_traits>
+#include <functional>
 
 #ifdef WIN32
 #include "gdal_priv.h"
@@ -35,6 +36,17 @@ namespace pubgeo {
         MIN_VALUE, MAX_VALUE
     } MIN_MAX_TYPE;
 
+    // Define type trait to get a higher precision version of specific types
+    template<typename T> struct make_long { typedef T type; };
+    template<> struct make_long<char>   { typedef short type; };
+    template<> struct make_long<short>  { typedef int type; };
+    template<> struct make_long<int>    { typedef long type; };
+    template<> struct make_long<long>   { typedef long long type; };
+    template<> struct make_long<unsigned char>  { typedef unsigned short type; };
+    template<> struct make_long<unsigned short> { typedef unsigned int type; };
+    template<> struct make_long<unsigned int>   { typedef unsigned long type; };
+    template<> struct make_long<unsigned long>  { typedef unsigned long long type; };
+
 //
 // Ortho image template class
 //
@@ -43,6 +55,7 @@ namespace pubgeo {
 
     public:
         typedef typename std::make_signed<TYPE>::type STYPE; // Define a signed version of TYPE
+        typedef typename make_long<TYPE>::type LTYPE; // Define a long version of TYPE
 
         double easting;
         double northing;
@@ -310,23 +323,29 @@ namespace pubgeo {
             this->gsd = gsdMeters;
 
             // Copy points into the ortho image.
-            if (mode == MIN_VALUE) {
-                for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    unsigned int x = int((pset.x(i) + pset.xOff - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
-                    unsigned int y = this->height - 1 - int((pset.y(i) + pset.yOff - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
-                    TYPE z = TYPE((pset.z(i) + pset.zOff - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z < this->data[y][x])) this->data[y][x] = z;
-                }
-            } else if (mode == MAX_VALUE) {
-                for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    unsigned int x = int((pset.x(i) + pset.xOff - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
-                    unsigned int y = this->height - 1 - int((pset.y(i) + pset.yOff - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
-                    TYPE z = TYPE((pset.z(i) + pset.zOff - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z > this->data[y][x])) this->data[y][x] = z;
+            std::function<bool(TYPE,TYPE)> compare;
+            if (mode == MIN_VALUE)
+                compare = std::less<TYPE>();
+            else
+                compare = std::greater<TYPE>();
+
+            double mx = 1.0/gsd;
+            double bx = mx*(pset.xOff - easting) - 0.5;
+            double my =-1.0/gsd;
+            double by = this->height-1 + my*(pset.yOff - northing) + 0.5;
+            double mz = 1/this->scale;
+            double bz = mz*(pset.zOff - this->offset);
+            for (unsigned long i = 0; i < pset.numPoints; i++) {
+                int x = mx*pset.x(i) + bx;
+                int y = my*pset.y(i) + by;
+                TYPE z = mz*pset.z(i) + bz;
+
+                for (int y1 = std::max(y,0); y1 <= std::min(y+1,(int) this->height-1); ++y1) {
+                    for (int x1 = std::max(x,0); x1 <= std::min(x+1,(int) this->width-1); ++x1) {
+                        TYPE& z0 = this->data[y1][x1];
+                        if (!z0 || compare(z,z0))
+                            z0 = z;
+                    }
                 }
             }
             return true;
@@ -452,30 +471,43 @@ namespace pubgeo {
 
             // Void fill down the pyramid.
             for (int k = level - 1; k >= 0; k--) {
+                OrthoImage<TYPE> ref(*pyramid[k]);
+
                 for (unsigned int j = 0; j < pyramid[k]->height; j++) {
                     for (unsigned int i = 0; i < pyramid[k]->width; i++) {
                         // Fill this pixel if it is currently void.
                         if (pyramid[k]->data[j][i] == 0) {
-                            unsigned int j2 = MIN(MAX(0, j / 2), pyramid[k + 1]->height - 1);
-                            unsigned int i2 = MIN(MAX(0, i / 2), pyramid[k + 1]->width - 1);
+                            unsigned int j2 = MIN(MAX(0, j / 2), pyramid[k+1]->height - 1);
+                            unsigned int i2 = MIN(MAX(0, i / 2), pyramid[k+1]->width - 1);
 
                             if (noSmoothing) {
                                 // Just use the closest pixel from above.
-                                pyramid[k]->data[j][i] = pyramid[k + 1]->data[j2][i2];
+                                pyramid[k]->data[j][i] = pyramid[k+1]->data[j2][i2];
                             } else {
-                                // Average neighboring pixels from above.
-                                float z = 0;
-                                int ct = 0;
-                                for (unsigned int jj = j2<1 ? 0 : j2-1;
-                                     jj <= MIN(j2 + 1, pyramid[k + 1]->height - 1); jj++) {
-                                    for (unsigned int ii = i2<1 ? 0 : i2-1;
-                                         ii <= MIN(i2 + 1, pyramid[k + 1]->width - 1); ii++) {
-                                        z += pyramid[k + 1]->data[jj][ii];
-                                        ct++;
+                                // Average neighboring pixels from around & above.
+                                LTYPE wts = 0;
+                                LTYPE ttl = 0;
+                                for (unsigned int j3 = j>0 ? j-1 : 0; j3 <= j+1; ++j3) {
+                                    for (unsigned int i3 = i>0 ? i-1 : 0; i3 <= i+1; ++i3) {
+                                        LTYPE z = 0;
+                                        if (j3 >=0 && i3 >= 0) {
+                                            if (j3 < pyramid[k]->height && i3 < pyramid[k]->width) {
+                                                z = ref.data[j3][i3];
+                                            }
+                                            if (!z && j3/2 < pyramid[k+1]->height && i3/2 < pyramid[k+1]->width) {
+                                                z = pyramid[k+1]->data[j3/2][i3/2];
+                                            }
+                                            if (z) {
+                                                LTYPE w = 1 + 1*(i3==i || j3==j);
+                                                ttl += w*z;
+                                                wts += w;
+                                            }
+                                        }
                                     }
                                 }
-                                z = z / ct;
-                                pyramid[k]->data[j][i] = (TYPE) z;
+                                if (wts) {
+                                    pyramid[k]->data[j][i] = ttl / wts;
+                                }
                             }
                         }
                     }
@@ -490,19 +522,28 @@ namespace pubgeo {
 
         // Apply a median filter to an image.
         void medianFilter(int rad, TYPE dzScaled) {
+            quantileFilter(rad, dzScaled, 0.5);
+        }
+
+        // Conceptionally, this is the same as a median filter, but instead of comparing the
+        // cell value to the median, we're comparing it against the specified quantile
+        void quantileFilter(int rad, TYPE dzScaled, float quantile) {
+            // Filter quantile
+            quantile = std::max(0.0f,std::min(1.0f,quantile));
+
             // Apply filter to the image
             Image<TYPE>::filter([&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
-                // Find median
-                size_t ix = ngbrs.size() / 2;
+                // Find quantile
+                size_t ix = std::min((size_t) floor(quantile * ngbrs.size()),ngbrs.size()-1);
                 std::partial_sort(ngbrs.begin(), ngbrs.begin() + (ix + 1), ngbrs.end());
-                STYPE medianValue = static_cast<STYPE>(ngbrs[ix]);
+                STYPE qValue = static_cast<STYPE>(ngbrs[ix]);
                 // Only replace if it differs by more than dz from the median
-                if (abs(medianValue - static_cast<STYPE>(ref)) > dzScaled)
-                    *val = medianValue;
+                if (abs(qValue - static_cast<STYPE>(ref)) > dzScaled)
+                    *val = qValue;
             }, rad);
         }
 
-        // Apply a minimum filter to an image.
+        // Apply a minimum filter to an image (erosion)
         void minFilter(int rad, TYPE dzScaled = 0) {
             // Apply filter to the image
             Image<TYPE>::filter([&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
@@ -511,6 +552,18 @@ namespace pubgeo {
                 // Only replace if it's more than dz above the minimum
                 if (ref > minValue + dzScaled)
                     *val = minValue;
+            }, rad);
+        }
+
+        // Apply a minimum filter to an image (dilation)
+        void maxFilter(int rad, TYPE dzScaled = 0) {
+            // Apply filter to the image
+            Image<TYPE>::filter([&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
+                // Find minimum
+                TYPE maxValue = *max_element(ngbrs.begin(),ngbrs.end());
+                // Only replace if it's less than dz from the maximum
+                if (ref + dzScaled < maxValue)
+                    *val = maxValue;
             }, rad);
         }
 
