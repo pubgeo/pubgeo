@@ -61,6 +61,9 @@ int main(int argc, char **argv) {
         return -1;
     }
 
+    // Other constants
+    double maxTreeHeightMeters = 40;
+
     // Initialize the timer.
     time_t t0;
     time(&t0);
@@ -72,7 +75,8 @@ int main(int argc, char **argv) {
         char cmd[4096];
         sprintf(readFileName, "temp.tif");
         sprintf(cmd, ".\\gdal\\gdal_translate %s temp.tif\n", inputFileName);
-        system(cmd);
+        int rval = system(cmd);
+        if (rval != 0) return rval;
     }
 
     // Read DSM as SHORT.
@@ -95,12 +99,6 @@ int main(int argc, char **argv) {
 
         // Fill small voids in the DSM.
         minImage.fillVoidsPyramid(true, 2);
-#ifdef DEBUG
-        // Write the MIN image as FLOAT.
-        char minOutFileName[1024];
-        sprintf(minOutFileName, "%s_MIN.tif", inputFileName);
-        minImage.write(minOutFileName, true);
-#endif
     } else if ((strcmp(ext, "las") == 0) || (strcmp(ext, "bpf") == 0)) {
         // First get the max Z values for the DSM.
         // Read a PSET file (e.g., BPF or LAS).
@@ -112,7 +110,13 @@ int main(int argc, char **argv) {
         if (!ok) return -1;
 
         // Median filter, replacing only points differing by more than the AGL threshold.
-        dsmImage.medianFilter(1, (unsigned int) (agl_meters / dsmImage.scale));
+        dsmImage.quantileFilter(1, (unsigned int) (agl_meters / dsmImage.scale), 0.4);
+
+        // Filter wells
+        dsmImage.filter([&](unsigned short* val, const unsigned short& ref, std::vector<unsigned short> &ngbrs) {
+            if (count_if(ngbrs.begin(),ngbrs.end(),[&](unsigned short ngbr){ return ngbr > ref + (sqrt(maxTreeHeightMeters*agl_meters) / dsmImage.scale); }) >= 4)
+                *val = 0;
+        });
 
         // Fill small voids in the DSM.
         dsmImage.fillVoidsPyramid(true, 2);
@@ -127,42 +131,46 @@ int main(int argc, char **argv) {
         if (!ok) return -1;
 
         // Median filter, replacing only points differing by more than the AGL threshold.
-        minImage.medianFilter(1, (unsigned int) (agl_meters / minImage.scale));
+        minImage.quantileFilter(2, (unsigned int) (agl_meters / minImage.scale), 0.33);
 
         // Fill small voids in the DSM.
         minImage.fillVoidsPyramid(true, 2);
+    } else {
+        printf("Error: Unrecognized file type.");
+        return -1;
+    }
+
 #ifdef DEBUG
         // Write the MIN image as FLOAT.
         char minOutFileName[1024];
         sprintf(minOutFileName, "%s_MIN.tif", inputFileName);
         minImage.write(minOutFileName, true);
 #endif
-        // Find many of the trees by comparing MIN and MAX. Set their values to void.
-        shr3d::OrthoImage<unsigned short> varImage = dsmImage - minImage;
-        unsigned short maxTreeHeightScaled = (40.0 / minImage.scale);
-        unsigned short threshold = (dz_meters / dsmImage.scale);
 
-        // Apply tree filter
-        shr3d::Image<unsigned short>::filter(&dsmImage, &varImage,
-                [&](unsigned short* val, const unsigned short& ref, std::vector<unsigned short> &ngbrs) {
-            // CAUTION: This is a hack to address an observed lidar sensor issue and may not generalize well.
-            if (ref <= maxTreeHeightScaled) {
-                // Set dsm to void if none of the neighbors are solid (var is < threshold)
-                if (std::none_of(ngbrs.begin(), ngbrs.end(), [&](unsigned short v){ return v<=threshold; }))
-                    *val = 0;
-            }
-        }, 1, 0, false);
+    // Find many of the trees by comparing MIN and MAX. Set their values to void.
+    shr3d::OrthoImage<unsigned short> varImage = dsmImage - minImage;
+    unsigned short maxTreeHeightScaled = (maxTreeHeightMeters / minImage.scale);
+    unsigned short threshold = (dz_meters / dsmImage.scale);
 
-        // Write the DSM2 image as FLOAT.
+    // Copy DSM, and apply tree filter so any location where the last return image differs from the DSM
+    // by more than THRESHOLD is set to void.
+    shr3d::OrthoImage<unsigned short> dsm2Image(dsmImage);
+    shr3d::Image<unsigned short>::filter(&dsm2Image, &varImage,
+            [&](unsigned short* val, const unsigned short& ref, std::vector<unsigned short> &ngbrs) {
+        // CAUTION: This is a hack to address an observed lidar sensor issue and may not generalize well.
+        if (ref <= maxTreeHeightScaled) {
+            // Set dsm to void if none of the neighbors are solid (var is < threshold)
+            if (std::none_of(ngbrs.begin(), ngbrs.end(), [&](unsigned short v){ return v<=threshold; }))
+                *val = 0;
+        }
+    }, 1, 0, false);
+
 #ifdef DEBUG
-        char dsm2OutFileName[1024];
-        sprintf(dsm2OutFileName, "%s_DSM2.tif", inputFileName);
-        dsmImage.write(dsm2OutFileName, true);
+    // Write the DSM2 image as FLOAT.
+    char dsm2OutFileName[1024];
+    sprintf(dsm2OutFileName, "%s_DSM2.tif", inputFileName);
+    dsm2Image.write(dsm2OutFileName, true);
 #endif
-    } else {
-        printf("Error: Unrecognized file type.");
-        return -1;
-    }
 
     // Convert horizontal and vertical uncertainty values to bin units.
     int dh_bins = MAX(1, (int) floor(dh_meters / dsmImage.gsd));
@@ -188,7 +196,7 @@ int main(int argc, char **argv) {
     shr3d::OrthoImage<unsigned short> dtmImage(minImage);
 
     // Classify ground points.
-    shr3d::Shr3dder::classifyGround(labelImage, dsmImage, dtmImage, dh_bins, dz_short);
+    shr3d::Shr3dder::classifyGround(labelImage, dsm2Image, dtmImage, dh_bins, dz_short);
 
     // For DSM voids, also set DTM value to void.
     // Note: because we've changed the DSM by this point (setting voids where all the trees are),
@@ -201,10 +209,10 @@ int main(int argc, char **argv) {
     }
 
     // Median filter, replacing only points differing by more than the DZ threshold.
-    dtmImage.medianFilter(1, (unsigned int) (dz_meters / dsmImage.scale));
+    dtmImage.medianFilter(1, dz_short);
 
     // Refine the object label image and export building outlines.
-    shr3d::Shr3dder::classifyNonGround(dsmImage, dtmImage, labelImage, dz_short, agl_short, (float) min_area_meters);
+    shr3d::Shr3dder::classifyNonGround(dsm2Image, dtmImage, labelImage, dz_short, agl_short, (float) min_area_meters);
 
     // Fill small voids in the DTM after all processing is complete.
     dtmImage.fillVoidsPyramid(true, 2);
@@ -227,18 +235,41 @@ int main(int argc, char **argv) {
             classImage.data[j][i] = LAS_UNCLASSIFIED;
 
             // Label trees.
-            if ((dsmImage.data[j][i] == 0) ||
-                (fabs((float) dsmImage.data[j][i] - (float) dtmImage.data[j][i]) > agl_short))
+            if ((dsm2Image.data[j][i] == 0) ||
+                (fabs((float) dsm2Image.data[j][i] - (float) dtmImage.data[j][i]) > agl_short))
                 classImage.data[j][i] = LAS_TREE;
 
             // Label buildings.
-            if (labelImage.data[j][i] == 1) classImage.data[j][i] = LAS_BUILDING;
+            if (labelImage.data[j][i] == 1 ||
+                    (dsmImage.data[j][i] > dtmImage.data[j][i] + maxTreeHeightScaled))
+                classImage.data[j][i] = LAS_BUILDING;
 
             // Label ground.
-            if (fabs((float) dsmImage.data[j][i] - (float) dtmImage.data[j][i]) < dz_short)
+            if ((dsmImage.data[j][i] == 0) ||
+                    fabs((float) dsm2Image.data[j][i] - (float) dtmImage.data[j][i]) < dz_short)
                 classImage.data[j][i] = LAS_GROUND;
         }
     }
+
+    // Fill in building labels on edge
+    for (unsigned int i = 0; i < 5; ++i) {
+        typedef std::pair<unsigned char, unsigned short> FType;
+        shr3d::OrthoImage<unsigned char> classImageRef(classImage);
+        shr3d::Image<unsigned char>::filter2(&classImage, &classImageRef, &dsmImage,
+                [&](const FType& ref) { return ref.first == LAS_TREE; },
+                [&](unsigned char* val, const FType& ref, std::vector<FType> &ngbrs) {
+                    if (any_of(ngbrs.begin(),ngbrs.end(), [&](FType ngbr) {
+                        return ngbr.first == LAS_BUILDING && (unsigned short) abs(ngbr.second-ref.second) < dz_short;
+                    }))
+                        *val = LAS_BUILDING;
+                },dh_bins);
+    }
+
+    // Filter building class
+    classImage.filter([&](unsigned char* val, const unsigned char& ref, std::vector<unsigned char> &ngbrs) {
+        if ((ref != LAS_BUILDING) && ((size_t) std::count(ngbrs.begin(),ngbrs.end(),LAS_BUILDING) >= ngbrs.size()/2))
+            *val = LAS_BUILDING;
+    });
 
     // Fill missing labels inside building regions.
     shr3d::Shr3dder::fillInsideBuildings(classImage);
