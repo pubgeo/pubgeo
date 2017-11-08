@@ -220,7 +220,7 @@ namespace pubgeo {
         }
 
         // Write GEOTIFF image using GDAL.
-        bool write(char *fileName, bool convertToFloat = false, bool egm96 = false) {
+        bool write(const char *fileName, bool convertToFloat = false, bool egm96 = false) const {
             GDALAllRegister();
             const char *pszFormat = "GTiff";
             GDALDriver *poDriver = GetGDALDriverManager()->GetDriverByName(pszFormat);
@@ -356,53 +356,7 @@ namespace pubgeo {
             // Read a PSET file (e.g., BPF or LAS).
             PointCloud pset;
             bool ok = pset.Read(view);
-            if (!ok) return false;
-
-            // Calculate scale and offset for conversion to TYPE.
-            float minVal = pset.bounds.zMin - 1;    // Reserve zero for noData value
-            float maxVal = pset.bounds.zMax + 1;
-            float maxImageVal = (float) (pow(2.0, int(sizeof(TYPE) * 8)) - 1);
-            this->offset = minVal;
-            this->scale = (maxVal - minVal) / maxImageVal;
-
-            // Calculate image width and height.
-            this->width = (unsigned int) ((pset.bounds.xMax - pset.bounds.xMin) / gsdMeters + 1);
-            this->height = (unsigned int) ((pset.bounds.yMax - pset.bounds.yMin) / gsdMeters + 1);
-
-            // Allocate an ortho image.
-            this->Allocate(this->width, this->height);
-            this->easting = pset.bounds.xMin;
-            this->northing = pset.bounds.yMin;
-            this->zone = pset.zone;
-            this->gsd = gsdMeters;
-
-            // Copy points into the ortho image.
-            if (mode == MIN_VALUE) {
-               for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    double dx = view->getFieldAs<double>(pdal::Dimension::Id::X, i);
-                    double dy = view->getFieldAs<double>(pdal::Dimension::Id::Y, i);
-                    double dz = view->getFieldAs<double>(pdal::Dimension::Id::Z, i);
-                    unsigned int x = int((dx - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
-                    unsigned int y = this->height - 1 - int((dy - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
-                    TYPE z = TYPE((dz - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z < this->data[y][x])) this->data[y][x] = z;
-                }
-            } else if (mode == MAX_VALUE) {
-                for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    double dx = view->getFieldAs<double>(pdal::Dimension::Id::X, i);
-                    double dy = view->getFieldAs<double>(pdal::Dimension::Id::Y, i);
-                    double dz = view->getFieldAs<double>(pdal::Dimension::Id::Z, i);
-                    unsigned int x = int((dx - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
-                    unsigned int y = this->height - 1 - int((dy - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
-                    TYPE z = TYPE((dz - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z > this->data[y][x])) this->data[y][x] = z;
-                }
-            }
-            return true;
+            return ok && readFromPointCloud(pset, gsdMeters, mode);
         }
 
         // Count voids in an image.

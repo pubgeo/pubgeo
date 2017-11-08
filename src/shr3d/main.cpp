@@ -36,33 +36,26 @@ int main(int argc, char **argv) {
     }
 
     // Get command line arguments and confirm they are valid.
-    double dh_meters = 0.0;
-    double dz_meters = 0.0;
-    double agl_meters = 0.0;
-    double min_area_meters = 50.0;
-    bool egm96 = false;
+    shr3d::Shr3dder shr3dder;
     bool convert = false;
     char inputFileName[1024];
     strcpy(inputFileName, argv[1]);
     for (int i = 2; i < argc; i++) {
-        if (strstr(argv[i], "DH=")) { dh_meters = atof(&(argv[i][3])); }
-        if (strstr(argv[i], "DZ=")) { dz_meters = atof(&(argv[i][3])); }
-        if (strstr(argv[i], "AGL=")) { agl_meters = atof(&(argv[i][4])); }
-        if (strstr(argv[i], "AREA=")) { min_area_meters = atof(&(argv[i][5])); }
-        if (strstr(argv[i], "EGM96")) { egm96 = true; }
+        if (strstr(argv[i], "DH=")) { shr3dder.dh_meters = atof(&(argv[i][3])); }
+        if (strstr(argv[i], "DZ=")) { shr3dder.dz_meters = atof(&(argv[i][3])); }
+        if (strstr(argv[i], "AGL=")) { shr3dder.agl_meters = atof(&(argv[i][4])); }
+        if (strstr(argv[i], "AREA=")) { shr3dder.min_area_meters = atof(&(argv[i][5])); }
+        if (strstr(argv[i], "EGM96")) { shr3dder.egm96 = true; }
         if (strstr(argv[i], "CONVERT")) { convert = true; }
     }
-    if ((dh_meters == 0.0) || (dz_meters == 0.0) || (agl_meters == 0.0)) {
-        printf("DH_METERS = %f\n", dh_meters);
-        printf("DZ_METERS = %f\n", dz_meters);
-        printf("AGL_METERS = %f\n", agl_meters);
+    if ((shr3dder.dh_meters == 0.0) || (shr3dder.dz_meters == 0.0) || (shr3dder.agl_meters == 0.0)) {
+        printf("DH_METERS = %f\n", shr3dder.dh_meters);
+        printf("DZ_METERS = %f\n", shr3dder.dz_meters);
+        printf("AGL_METERS = %f\n", shr3dder.agl_meters);
         printf("Error: All three values must be nonzero.\n");
         printArguments();
         return -1;
     }
-
-    // Other constants
-    double maxTreeHeightMeters = 40;
 
     // Initialize the timer.
     time_t t0;
@@ -79,10 +72,12 @@ int main(int argc, char **argv) {
         if (rval != 0) return rval;
     }
 
+    std::map<shr3d::ImageType,std::string> outputFilenames;
+    std::string basename(inputFileName);
+
     // Read DSM as SHORT.
     // Input can be GeoTIFF or LAS.
-    shr3d::OrthoImage<unsigned short> dsmImage;
-    shr3d::OrthoImage<unsigned short> minImage;
+    shr3d::OrthoImage<unsigned short> dsmImage, minImage;
     printf("Reading DSM as SHORT.\n");
     int len = (int) strlen(inputFileName);
     char *ext = &inputFileName[len - 3];
@@ -95,196 +90,49 @@ int main(int argc, char **argv) {
         minImage = dsmImage;
 
         // Min filter, replacing only points differing by more than the AGL threshold.
-        minImage.minFilter(4, (unsigned int) (agl_meters / minImage.scale));
+        minImage.minFilter(4, (unsigned int) (shr3dder.agl_meters / minImage.scale));
 
         // Fill small voids in the DSM.
         minImage.fillVoidsPyramid(true, 2);
+
     } else if ((strcmp(ext, "las") == 0) || (strcmp(ext, "bpf") == 0)) {
-        // First get the max Z values for the DSM.
-        // Read a PSET file (e.g., BPF or LAS).
+        // Read a PSET file (e.g., BPF or LAS) & create DSM and MIN images
         shr3d::PointCloud pset;
-        bool ok = pset.Read(inputFileName);
-        if (!ok) return -1;
+        if (!pset.Read(inputFileName)
+                || !shr3dder.createDSM(pset, dsmImage)
+                || !shr3dder.createMIN(pset, minImage))
+            return -1;
 
-        ok = dsmImage.readFromPointCloud(pset, (float) dh_meters, shr3d::MAX_VALUE);
-        if (!ok) return -1;
-
-        // Median filter, replacing only points differing by more than the AGL threshold.
-        dsmImage.quantileFilter(1, (unsigned int) (agl_meters / dsmImage.scale), 0.4);
-
-        // Filter wells
-        dsmImage.filter([&](unsigned short* val, const unsigned short& ref, std::vector<unsigned short> &ngbrs) {
-            if (count_if(ngbrs.begin(),ngbrs.end(),[&](unsigned short ngbr){ return ngbr > ref + (sqrt(maxTreeHeightMeters*agl_meters) / dsmImage.scale); }) >= 4)
-                *val = 0;
-        });
-
-        // Fill small voids in the DSM.
-        dsmImage.fillVoidsPyramid(true, 2);
-
-        // Write the DSM image as FLOAT.
-        char dsmOutFileName[1024];
-        sprintf(dsmOutFileName, "%s_DSM.tif", inputFileName);
-        dsmImage.write(dsmOutFileName, true);
-
-        // Now get the minimum Z values for the DTM.
-        ok = minImage.readFromPointCloud(pset, (float) dh_meters, shr3d::MIN_VALUE);
-        if (!ok) return -1;
-
-        // Median filter, replacing only points differing by more than the AGL threshold.
-        minImage.quantileFilter(2, (unsigned int) (agl_meters / minImage.scale), 0.33);
-
-        // Fill small voids in the DSM.
-        minImage.fillVoidsPyramid(true, 2);
+        outputFilenames[shr3d::DSM] = basename + "_DSM.tif";
     } else {
         printf("Error: Unrecognized file type.");
         return -1;
     }
 
-#ifdef DEBUG
-        // Write the MIN image as FLOAT.
-        char minOutFileName[1024];
-        sprintf(minOutFileName, "%s_MIN.tif", inputFileName);
-        minImage.write(minOutFileName, true);
-#endif
-
-    // Find many of the trees by comparing MIN and MAX. Set their values to void.
-    shr3d::OrthoImage<unsigned short> varImage = dsmImage - minImage;
-    unsigned short maxTreeHeightScaled = (maxTreeHeightMeters / minImage.scale);
-    unsigned short threshold = (dz_meters / dsmImage.scale);
-
-    // Copy DSM, and apply tree filter so any location where the last return image differs from the DSM
-    // by more than THRESHOLD is set to void.
-    shr3d::OrthoImage<unsigned short> dsm2Image(dsmImage);
-    shr3d::Image<unsigned short>::filter(&dsm2Image, &varImage,
-            [&](unsigned short* val, const unsigned short& ref, std::vector<unsigned short> &ngbrs) {
-        // CAUTION: This is a hack to address an observed lidar sensor issue and may not generalize well.
-        if (ref <= maxTreeHeightScaled) {
-            // Set dsm to void if none of the neighbors are solid (var is < threshold)
-            if (std::none_of(ngbrs.begin(), ngbrs.end(), [&](unsigned short v){ return v<=threshold; }))
-                *val = 0;
-        }
-    }, 1, 0, false);
-
-#ifdef DEBUG
-    // Write the DSM2 image as FLOAT.
-    char dsm2OutFileName[1024];
-    sprintf(dsm2OutFileName, "%s_DSM2.tif", inputFileName);
-    dsm2Image.write(dsm2OutFileName, true);
-#endif
-
     // Convert horizontal and vertical uncertainty values to bin units.
-    int dh_bins = MAX(1, (int) floor(dh_meters / dsmImage.gsd));
-    printf("DZ_METERS = %f\n", dz_meters);
-    printf("DH_METERS = %f\n", dh_meters);
+    int dh_bins = MAX(1, (int) floor(shr3dder.dh_meters / dsmImage.gsd));
+    printf("DZ_METERS = %f\n", shr3dder.dz_meters);
+    printf("DH_METERS = %f\n", shr3dder.dh_meters);
     printf("DH_BINS = %d\n", dh_bins);
-    unsigned int dz_short = (unsigned int) (dz_meters / dsmImage.scale);
+    unsigned int dz_short = (unsigned int) (shr3dder.dz_meters / dsmImage.scale);
     printf("DZ_SHORT = %d\n", dz_short);
-    printf("AGL_METERS = %f\n", agl_meters);
-    unsigned int agl_short = (unsigned int) (agl_meters / dsmImage.scale);
+    printf("AGL_METERS = %f\n", shr3dder.agl_meters);
+    unsigned int agl_short = (unsigned int) (shr3dder.agl_meters / dsmImage.scale);
     printf("AGL_SHORT = %d\n", agl_short);
-    printf("AREA_METERS = %f\n", min_area_meters);
+    printf("AREA_METERS = %f\n", shr3dder.min_area_meters);
 
-    // Generate label image.
-    shr3d::OrthoImage<unsigned long> labelImage;
-    labelImage.Allocate(dsmImage.width, dsmImage.height);
-    labelImage.easting = dsmImage.easting;
-    labelImage.northing = dsmImage.northing;
-    labelImage.zone = dsmImage.zone;
-    labelImage.gsd = dsmImage.gsd;
+    // Set outputs
+#ifdef DEBUG
+    outputFilenames[shr3d::MIN] = basename + "_MIN.tif";
+    outputFilenames[shr3d::DSM2] = basename + "_DSM2.tif";
+    outputFilenames[shr3d::LABEL] = basename + "_label.tif";
+#endif
+    outputFilenames[shr3d::DTM] = basename + "_DTM.tif";
+    outputFilenames[shr3d::CLASS] = basename + "_class.tif";
+    outputFilenames[shr3d::BUILDING] = basename + "_buildings.tif";
 
-    // Allocate a DTM image as SHORT and copy in the Min DSM values.
-    shr3d::OrthoImage<unsigned short> dtmImage(minImage);
-
-    // Classify ground points.
-    shr3d::Shr3dder::classifyGround(labelImage, dsm2Image, dtmImage, dh_bins, dz_short);
-
-    // For DSM voids, also set DTM value to void.
-    // Note: because we've changed the DSM by this point (setting voids where all the trees are),
-    //  use the minImage which will have the same voids as the original DSM
-    printf("Setting DTM values to VOID where DSM is VOID...\n");
-    for (unsigned int j = 0; j < minImage.height; j++) {
-        for (unsigned int i = 0; i < minImage.width; i++) {
-            if (minImage.data[j][i] == 0) dtmImage.data[j][i] = 0;
-        }
-    }
-
-    // Median filter, replacing only points differing by more than the DZ threshold.
-    dtmImage.medianFilter(1, dz_short);
-
-    // Refine the object label image and export building outlines.
-    shr3d::Shr3dder::classifyNonGround(dsm2Image, dtmImage, labelImage, dz_short, agl_short, (float) min_area_meters);
-
-    // Fill small voids in the DTM after all processing is complete.
-    dtmImage.fillVoidsPyramid(true, 2);
-
-    // Write the DTM image as FLOAT.
-    char dtmOutFileName[1024];
-    sprintf(dtmOutFileName, "%s_DTM.tif", inputFileName);
-    dtmImage.write(dtmOutFileName, true, egm96);
-
-    // Produce a classification raster image with LAS standard point classes.
-    shr3d::OrthoImage<unsigned char> classImage;
-    classImage.Allocate(labelImage.width, labelImage.height);
-    classImage.easting = dsmImage.easting;
-    classImage.northing = dsmImage.northing;
-    classImage.zone = dsmImage.zone;
-    classImage.gsd = dsmImage.gsd;
-    for (unsigned int j = 0; j < classImage.height; j++) {
-        for (unsigned int i = 0; i < classImage.width; i++) {
-            // Set default as unlabeled.
-            classImage.data[j][i] = LAS_UNCLASSIFIED;
-
-            // Label trees.
-            if ((dsm2Image.data[j][i] == 0) ||
-                (fabs((float) dsm2Image.data[j][i] - (float) dtmImage.data[j][i]) > agl_short))
-                classImage.data[j][i] = LAS_TREE;
-
-            // Label buildings.
-            if (labelImage.data[j][i] == 1 ||
-                    (dsmImage.data[j][i] > dtmImage.data[j][i] + maxTreeHeightScaled))
-                classImage.data[j][i] = LAS_BUILDING;
-
-            // Label ground.
-            if ((dsmImage.data[j][i] == 0) ||
-                    fabs((float) dsm2Image.data[j][i] - (float) dtmImage.data[j][i]) < dz_short)
-                classImage.data[j][i] = LAS_GROUND;
-        }
-    }
-
-    // Fill in building labels on edge
-    for (unsigned int i = 0; i < 5; ++i) {
-        typedef std::pair<unsigned char, unsigned short> FType;
-        shr3d::OrthoImage<unsigned char> classImageRef(classImage);
-        shr3d::Image<unsigned char>::filter2(&classImage, &classImageRef, &dsmImage,
-                [&](const FType& ref) { return ref.first == LAS_TREE; },
-                [&](unsigned char* val, const FType& ref, std::vector<FType> &ngbrs) {
-                    if (any_of(ngbrs.begin(),ngbrs.end(), [&](FType ngbr) {
-                        return ngbr.first == LAS_BUILDING && (unsigned short) abs(ngbr.second-ref.second) < dz_short;
-                    }))
-                        *val = LAS_BUILDING;
-                },dh_bins);
-    }
-
-    // Filter building class
-    classImage.filter([&](unsigned char* val, const unsigned char& ref, std::vector<unsigned char> &ngbrs) {
-        if ((ref != LAS_BUILDING) && ((size_t) std::count(ngbrs.begin(),ngbrs.end(),LAS_BUILDING) >= ngbrs.size()/2))
-            *val = LAS_BUILDING;
-    });
-
-    // Fill missing labels inside building regions.
-    shr3d::Shr3dder::fillInsideBuildings(classImage);
-
-    // Write the classification image.
-    char classOutFileName[1024];
-    sprintf(classOutFileName, "%s_class.tif", inputFileName);
-    classImage.write(classOutFileName, false, egm96);
-    for (unsigned int j = 0; j < classImage.height; j++) {
-        for (unsigned int i = 0; i < classImage.width; i++) {
-            if (classImage.data[j][i] != LAS_BUILDING) classImage.data[j][i] = 0;
-        }
-    }
-    sprintf(classOutFileName, "%s_buildings.tif", inputFileName);
-    classImage.write(classOutFileName, false, egm96);
+    // Process
+    shr3dder.process(dsmImage, minImage, outputFilenames);
 
     // Report total elapsed time.
     time_t t1;

@@ -26,29 +26,11 @@ namespace pubgeo {
             executor = new pdal::PipelineExecutor(buildPipelineStr(fileName));
             executor->execute();
             const pdal::PointViewSet &pvs = executor->getManagerConst().views();
-            pv = pvs.begin()->get();
             if (pvs.size() > 1) {
                 std::cerr << "[PUBGEO::PointCloud::READ] File contains additional unread sets." << std::endl;
             }
 
-            numPoints = pv->size();
-            if (numPoints < 1) {
-                std::cerr << "[PUBGEO::PointCloud::READ] No points found in file." << std::endl;
-                return false;
-            }
-
-            pdal::BOX3D box;
-            pv->calculateBounds(box);
-            pdal::SpatialReference sr = pv->spatialReference();
-            zone = sr.computeUTMZone(box);
-
-            // used later to return points
-            xOff = (int) floor(box.minx);
-            yOff = (int) floor(box.miny);
-            zOff = (int) floor(box.minz);
-
-            bounds = {box.minx, box.maxx, box.miny, box.maxy, box.minz, box.maxz};
-            return true;
+            return Read(*pvs.begin());
         }
         catch (pdal::pdal_error &pe) {
             std::cerr << pe.what() << std::endl;
@@ -57,15 +39,16 @@ namespace pubgeo {
     }
 
     bool PointCloud::Read(pdal::PointViewPtr view) {
-        numPoints = view->size();
+        pv = view;
+        numPoints = pv->size();
         if (numPoints < 1) {
             std::cerr << "[PUBGEO::PointCloud::READ] No points found in file." << std::endl;
             return false;
         }
 
         pdal::BOX3D box;
-        view->calculateBounds(box);
-        pdal::SpatialReference sr = view->spatialReference();
+        pv->calculateBounds(box);
+        pdal::SpatialReference sr = pv->spatialReference();
         zone = sr.computeUTMZone(box);
 
         // used later to return points

@@ -13,6 +13,221 @@
 
 using namespace shr3d;
 
+void Shr3dder::process(const OrthoImage<unsigned short> &dsmImage, const OrthoImage<unsigned short> &minImage,
+        std::map<ImageType,std::string> outputFilenames) {
+    if (outputFilenames.empty())
+        return;
+    if (!outputFilenames[DSM].empty())
+        dsmImage.write(outputFilenames[DSM].c_str(), true, egm96);
+    if (!outputFilenames[MIN].empty())
+        minImage.write(outputFilenames[MIN].c_str(), true, egm96);
+
+    ImageType last_output = DSM;
+    for (const std::pair<ImageType,std::string>& o : outputFilenames)
+        if (o.first > last_output && o.first <= BUILDING)
+            last_output = o.first;
+
+    if (last_output <= MIN)
+        return;
+
+    shr3d::OrthoImage<unsigned short> dsm2Image, dtmImage;
+    shr3d::OrthoImage<unsigned long> labelImage;
+    createDTM(dsmImage,minImage,dtmImage,dsm2Image,labelImage);
+
+    if (!outputFilenames[DSM2].empty())
+        dsm2Image.write(outputFilenames[DSM2].c_str(), true, egm96);
+    if (!outputFilenames[DTM].empty())
+        dtmImage.write(outputFilenames[DTM].c_str(), true, egm96);
+    if (!outputFilenames[LABEL].empty())
+        labelImage.write(outputFilenames[LABEL].c_str(), false);
+
+    if (last_output <= DTM)
+        return;
+
+    shr3d::OrthoImage<unsigned char> classImage = labelClasses(dsmImage,dtmImage,dsm2Image,labelImage);
+
+    if (!outputFilenames[CLASS].empty())
+        classImage.write(outputFilenames[CLASS].c_str(), false);
+
+    if (last_output <= CLASS)
+        return;
+
+    shr3d::OrthoImage<unsigned char> bldgImage = labelBuildings(classImage);
+
+    if (!outputFilenames[BUILDING].empty())
+        bldgImage.write(outputFilenames[BUILDING].c_str(), false);
+}
+
+bool Shr3dder::createDSM(const PointCloud& pset, OrthoImage<unsigned short> &dsmImage) {
+    if (!dsmImage.readFromPointCloud(pset, (float) dh_meters, shr3d::MAX_VALUE))
+        return false;
+
+    // Median filter, replacing only points differing by more than the AGL threshold.
+    dsmImage.quantileFilter(1, (unsigned int) (agl_meters / dsmImage.scale), 0.4);
+
+    // Filter wells
+    dsmImage.filter([&](unsigned short* val, const unsigned short& ref, std::vector<unsigned short> &ngbrs) {
+        if (count_if(ngbrs.begin(),ngbrs.end(),[&](unsigned short ngbr) {
+            return ngbr > ref + (sqrt(max_tree_height_meters*agl_meters) / dsmImage.scale); }) >= 4)
+            *val = 0;
+    });
+
+    // Fill small voids in the DSM.
+    dsmImage.fillVoidsPyramid(true, 2);
+
+    return true;
+}
+
+bool Shr3dder::createMIN(const PointCloud& pset, OrthoImage<unsigned short> &minImage) {
+    // Now get the minimum Z values for the DTM.
+    if (!minImage.readFromPointCloud(pset, (float) dh_meters, shr3d::MIN_VALUE))
+        return false;
+
+    // Median filter, replacing only points differing by more than the AGL threshold.
+    minImage.quantileFilter(2, (unsigned int) (agl_meters / minImage.scale), 0.33);
+
+    // Fill small voids in the DSM.
+    minImage.fillVoidsPyramid(true, 2);
+
+    return true;
+}
+
+void Shr3dder::createDTM(const OrthoImage<unsigned short> &dsmImage, const OrthoImage<unsigned short> &minImage,
+        OrthoImage<unsigned short> &dtmImage, OrthoImage<unsigned short> &dsm2Image, OrthoImage<unsigned long> &labelImage) {
+
+    // Convert horizontal and vertical uncertainty values to bin units.
+    int dh_bins = MAX(1, (int) floor(dh_meters / dsmImage.gsd));
+    unsigned int dz_short = (unsigned int) (dz_meters / dsmImage.scale);
+    unsigned int agl_short = (unsigned int) (agl_meters / dsmImage.scale);
+    unsigned int maxTreeHeightScaled = (max_tree_height_meters / minImage.scale);
+    unsigned short threshold = (dz_meters / dsmImage.scale);
+
+    // Find many of the trees by comparing MIN and MAX. Set their values to void.
+    shr3d::OrthoImage<unsigned short> varImage = dsmImage - minImage;
+
+    // Copy DSM, and apply tree filter so any location where the last return image differs from the DSM
+    // by more than THRESHOLD is set to void.
+    dsm2Image = dsmImage;
+    shr3d::Image<unsigned short>::filter(&dsm2Image, &varImage,
+            [&](unsigned short* val, const unsigned short& ref, std::vector<unsigned short> &ngbrs) {
+        // CAUTION: This is a hack to address an observed lidar sensor issue and may not generalize well.
+        if (ref <= maxTreeHeightScaled) {
+            // Set dsm to void if none of the neighbors are solid (var is < threshold)
+            if (std::none_of(ngbrs.begin(), ngbrs.end(), [&](unsigned short v){ return v<=threshold; }))
+                *val = 0;
+        }
+    }, 1, 0, false);
+
+
+    // Generate label image.
+    labelImage.Allocate(dsmImage.width, dsmImage.height);
+    labelImage.easting = dsmImage.easting;
+    labelImage.northing = dsmImage.northing;
+    labelImage.zone = dsmImage.zone;
+    labelImage.gsd = dsmImage.gsd;
+
+    // Allocate a DTM image as SHORT and copy in the Min DSM values.
+    dtmImage = minImage;
+
+    // Classify ground points.
+    classifyGround(labelImage, dsm2Image, dtmImage, dh_bins, dz_short);
+
+    // For DSM voids, also set DTM value to void.
+    // Note: because we've changed the DSM by this point (setting voids where all the trees are),
+    //  use the minImage which will have the same voids as the original DSM
+    printf("Setting DTM values to VOID where DSM is VOID...\n");
+    for (unsigned int j = 0; j < minImage.height; j++) {
+        for (unsigned int i = 0; i < minImage.width; i++) {
+            if (minImage.data[j][i] == 0) dtmImage.data[j][i] = 0;
+        }
+    }
+
+    // Median filter, replacing only points differing by more than the DZ threshold.
+    dtmImage.medianFilter(1, dz_short);
+
+    // Refine the object label image and export building outlines.
+    classifyNonGround(dsm2Image, dtmImage, labelImage, dz_short, agl_short, (float) min_area_meters);
+
+    // Fill small voids in the DTM after all processing is complete.
+    dtmImage.fillVoidsPyramid(true, 2);
+}
+
+OrthoImage<unsigned char> Shr3dder::labelClasses(
+        const OrthoImage<unsigned short> &dsmImage, const OrthoImage<unsigned short> &dtmImage,
+        const OrthoImage<unsigned short> &dsm2Image, const OrthoImage<unsigned long> &labelImage) {
+    // Produce a classification raster image with LAS standard point classes.
+
+    // Convert horizontal and vertical uncertainty values to bin units.
+    int dh_bins = MAX(1, (int) floor(dh_meters / dsmImage.gsd));
+    unsigned int maxTreeHeightScaled = (max_tree_height_meters / dtmImage.scale);
+    unsigned int dz_short = (unsigned int) (dz_meters / dsmImage.scale);
+    unsigned int agl_short = (unsigned int) (agl_meters / dsmImage.scale);
+
+    OrthoImage<unsigned char> classImage;
+    classImage.Allocate(labelImage.width, labelImage.height);
+    classImage.easting = dsmImage.easting;
+    classImage.northing = dsmImage.northing;
+    classImage.zone = dsmImage.zone;
+    classImage.gsd = dsmImage.gsd;
+    for (unsigned int j = 0; j < classImage.height; j++) {
+        for (unsigned int i = 0; i < classImage.width; i++) {
+            // Set default as unlabeled.
+            classImage.data[j][i] = LAS_UNCLASSIFIED;
+
+            // Label trees.
+            if ((dsm2Image.data[j][i] == 0) ||
+                (fabs((float) dsm2Image.data[j][i] - (float) dtmImage.data[j][i]) > agl_short))
+                classImage.data[j][i] = LAS_TREE;
+
+            // Label buildings.
+            if (labelImage.data[j][i] == 1 ||
+                    (dsmImage.data[j][i] > dtmImage.data[j][i] + maxTreeHeightScaled))
+                classImage.data[j][i] = LAS_BUILDING;
+
+            // Label ground.
+            if ((dsmImage.data[j][i] == 0) ||
+                    fabs((float) dsm2Image.data[j][i] - (float) dtmImage.data[j][i]) < dz_short)
+                classImage.data[j][i] = LAS_GROUND;
+        }
+    }
+
+    // Fill in building labels on edge
+    for (unsigned int i = 0; i < 5; ++i) {
+        typedef std::pair<unsigned char, unsigned short> FType;
+        shr3d::OrthoImage<unsigned char> classImageRef(classImage);
+        shr3d::Image<unsigned char>::filter2(&classImage, &classImageRef, &dsmImage,
+                [&](const FType& ref) { return ref.first == LAS_TREE; },
+                [&](unsigned char* val, const FType& ref, std::vector<FType> &ngbrs) {
+                    if (any_of(ngbrs.begin(),ngbrs.end(), [&](FType ngbr) {
+                        return ngbr.first == LAS_BUILDING && (unsigned short) abs(ngbr.second-ref.second) < dz_short;
+                    }))
+                        *val = LAS_BUILDING;
+                },dh_bins);
+    }
+
+    // Filter building class
+    classImage.filter([&](unsigned char* val, const unsigned char& ref, std::vector<unsigned char> &ngbrs) {
+        if ((ref != LAS_BUILDING) && ((size_t) std::count(ngbrs.begin(),ngbrs.end(),LAS_BUILDING) >= ngbrs.size()/2))
+            *val = LAS_BUILDING;
+    });
+
+    // Fill missing labels inside building regions.
+    fillInsideBuildings(classImage);
+
+    return classImage;
+}
+
+OrthoImage<unsigned char> Shr3dder::labelBuildings(const OrthoImage<unsigned char> &classImage) {
+    OrthoImage<unsigned char> bldgImage(classImage);
+    for (unsigned int j = 0; j < classImage.height; j++) {
+        for (unsigned int i = 0; i < classImage.width; i++) {
+            if (classImage.data[j][i] != LAS_BUILDING) bldgImage.data[j][i] = 0;
+        }
+    }
+    return bldgImage;
+}
+
+
 // Extend object boundaries to capture points missed around the edges.
 void extendObjectBoundaries(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned long> &labelImage,
                             int edgeResolution, unsigned int minDistanceShortValue) {

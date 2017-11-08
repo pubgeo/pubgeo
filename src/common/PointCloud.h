@@ -62,7 +62,7 @@ namespace pubgeo {
 
     private:
         pdal::PipelineExecutor *executor;
-        pdal::PointView *pv;
+        pdal::PointViewPtr pv;
 
         void CleanupPdalPointers();
     };
