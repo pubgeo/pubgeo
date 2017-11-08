@@ -169,7 +169,13 @@ namespace pubgeo {
                 for (unsigned int ib = 0; ib < this->bands; ib++) {
                     // Read the next row.
                     poBand = poDataset->GetRasterBand(ib + 1);
-                    poBand->RasterIO(GF_Read, 0, irow, this->width, 1, poBandBlock, this->width, 1, BandDataType, 0, 0);
+                    CPLErr rv = poBand->RasterIO(GF_Read, 0, irow, this->width, 1, poBandBlock, this->width, 1, BandDataType, 0, 0);
+                    if (rv > CPLErr::CE_Warning) {
+                        // Deallocate memory.
+                        CPLFree(poBandBlock);
+                        delete poDataset;
+                        return false;
+                    }
                     switch (BandDataType) {
                         case GDT_Byte: {
                             for (unsigned int icols = 0; icols < this->width; icols++) {
@@ -273,9 +279,13 @@ namespace pubgeo {
                             else
                                 raster[k] = (float(this->data[j][k]) * this->scale) + this->offset;
                         }
-                        poBand->RasterIO(GF_Write, 0, j, this->width, 1, raster, this->width, 1, theBandDataType,
+                        CPLErr rv = poBand->RasterIO(GF_Write, 0, j, this->width, 1, raster, this->width, 1, theBandDataType,
                                          sizeof(float) * this->bands,
                                          this->width * this->bands * sizeof(float));
+                        if (rv > CPLErr::CE_Warning) {
+                            delete[]raster;
+                            return false;
+                        }
                     }
                 }
                 delete[]raster;
@@ -284,9 +294,12 @@ namespace pubgeo {
                 for (unsigned int i = 1; i <= this->bands; i++) {
                     GDALRasterBand *poBand = poDstDS->GetRasterBand(i);
                     for (unsigned int j = 0; j < this->height; j++) {
-                        poBand->RasterIO(GF_Write, 0, j, this->width, 1, this->data[j], this->width, 1, theBandDataType,
+                        CPLErr rv = poBand->RasterIO(GF_Write, 0, j, this->width, 1, this->data[j], this->width, 1, theBandDataType,
                                          sizeof(TYPE) * this->bands,
                                          this->width * this->bands * sizeof(TYPE));
+                        if (rv > CPLErr::CE_Warning) {
+                            return false;
+                        }
                     }
                 }
             }
