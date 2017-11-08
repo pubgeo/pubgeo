@@ -2,7 +2,7 @@
 // Licensed under the MIT License. See LICENSE.txt in the project root for full license information.
 
 #include <cstdio>
-#include <ctime>
+#include <chrono>
 #include "orthoimage.h"
 #include "shr3d.h"
 
@@ -58,8 +58,7 @@ int main(int argc, char **argv) {
     }
 
     // Initialize the timer.
-    time_t t0;
-    time(&t0);
+    std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
 
     // If specified, then convert to GDAL TIFF.
     char readFileName[1024];
@@ -135,7 +134,6 @@ int main(int argc, char **argv) {
     shr3dder.process(dsmImage, minImage, outputFilenames);
 
     // Report total elapsed time.
-    time_t t1;
-    time(&t1);
-    printf("Total time elapsed = %f seconds\n", double(t1 - t0));
+    std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
+    printf("Total time elapsed = %f seconds\n", std::chrono::duration<double>(t1-t0).count());
 }
