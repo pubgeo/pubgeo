@@ -32,15 +32,15 @@
 #include <pdal/pdal_export.hpp>
 #include <pdal/util/ProgramArgs.hpp>
 
+#include "shr3d.h"
+
 namespace pdal
 {
 
 class PDAL_DLL Shr3dWriter : public Writer
 {
 public:
-    Shr3dWriter()
-    {
-    }
+    Shr3dWriter() : shr3dder(), m_filename(), output(shr3d::DTM) {}
 
     static void* create();
     static int32_t destroy(void*);
@@ -50,12 +50,10 @@ private:
     virtual void addArgs(ProgramArgs& args);
     virtual void write(const PointViewPtr view);
 
+    shr3d::Shr3dder shr3dder;
+
     std::string m_filename;
-    double m_dh;
-    double m_dz;
-    double m_agl;
-    double m_area;
-    bool m_egm96;
+    int output;
 
     Shr3dWriter& operator=(const Shr3dWriter&) = delete;
     Shr3dWriter(const Shr3dWriter&) = delete;

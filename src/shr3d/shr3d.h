@@ -9,6 +9,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <map>
+#include <string>
 #include "orthoimage.h"
 
 #define LABEL_OBJECT    1
@@ -58,18 +60,55 @@ namespace shr3d {
         long int count;
     } ObjectType;
 
+    enum ImageType {
+        DSM,
+        MIN,
+        DTM,
+        CLASS,
+        BUILDING,
+        DSM2,
+        LABEL
+    };
+
     class Shr3dder {
     public:
+        // Options
+        double dh_meters;
+        double dz_meters;
+        double agl_meters;
+        double min_area_meters;
+        double max_tree_height_meters;
+        bool egm96;
+
+        // Constructor
+        Shr3dder() : dh_meters(1), dz_meters(1), agl_meters(2),
+                min_area_meters(50), max_tree_height_meters(40), egm96(false) {}
+
         // Function declarations.
-        static void classifyGround(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned short> &dsmImage,
+        void process(const OrthoImage<unsigned short> &dsmImage, const OrthoImage<unsigned short> &minImage,
+                std::map<ImageType,std::string> outputFilenames);
+
+        bool createDSM(const PointCloud& pset, OrthoImage<unsigned short> &dsmImage);
+
+        bool createMIN(const PointCloud& pset, OrthoImage<unsigned short> &minImage);
+
+        void createDTM(const OrthoImage<unsigned short> &dsmImage,  const OrthoImage<unsigned short> &minImage,
+                OrthoImage<unsigned short> &dtmImage, OrthoImage<unsigned short> &dsm2Image, OrthoImage<unsigned long> &labelImage);
+
+        OrthoImage<unsigned char> labelClasses(const OrthoImage<unsigned short> &dsmImage, const OrthoImage<unsigned short> &dtmImage,
+                       const OrthoImage<unsigned short> &dsm2Image, const OrthoImage<unsigned long> &labelImage);
+
+        OrthoImage<unsigned char> labelBuildings(const OrthoImage<unsigned char> &classImage);
+
+        void classifyGround(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned short> &dsmImage,
                                    OrthoImage<unsigned short> &dtmImage, int dhBins, unsigned int dzShort);
 
-        static void classifyNonGround(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned short> &dtmImage,
+        void classifyNonGround(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned short> &dtmImage,
                                       OrthoImage<unsigned long> &labelImage, unsigned int dzShort,
                                       unsigned int aglShort,
                                       float minAreaMeters);
 
-        static void fillInsideBuildings(OrthoImage<unsigned char> &classImage);
+        void fillInsideBuildings(OrthoImage<unsigned char> &classImage);
     };
 }
 

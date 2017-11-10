@@ -14,16 +14,11 @@
 #include <typeinfo>
 #include <cstring>
 #include <algorithm>
+#include <type_traits>
+#include <functional>
 
-#ifdef WIN32
 #include "gdal_priv.h"
 #include "ogr_spatialref.h"
-#else
-
-#include <gdal/gdal_priv.h>
-#include "gdal/ogr_spatialref.h"
-
-#endif
 
 #include "util.h"
 #include "PointCloud.h"
@@ -34,6 +29,17 @@ namespace pubgeo {
         MIN_VALUE, MAX_VALUE
     } MIN_MAX_TYPE;
 
+    // Define type trait to get a higher precision version of specific types
+    template<typename T> struct make_long { typedef T type; };
+    template<> struct make_long<char>   { typedef short type; };
+    template<> struct make_long<short>  { typedef int type; };
+    template<> struct make_long<int>    { typedef long type; };
+    template<> struct make_long<long>   { typedef long long type; };
+    template<> struct make_long<unsigned char>  { typedef unsigned short type; };
+    template<> struct make_long<unsigned short> { typedef unsigned int type; };
+    template<> struct make_long<unsigned int>   { typedef unsigned long type; };
+    template<> struct make_long<unsigned long>  { typedef unsigned long long type; };
+
 //
 // Ortho image template class
 //
@@ -41,22 +47,19 @@ namespace pubgeo {
     class OrthoImage : public Image<TYPE> {
 
     public:
+        typedef typename std::make_signed<TYPE>::type STYPE; // Define a signed version of TYPE
+        typedef typename make_long<TYPE>::type LTYPE; // Define a long version of TYPE
 
         double easting;
         double northing;
         int zone;
         float gsd;
 
-        // Constructor
-        OrthoImage() {
-            memset(this, 0, sizeof(OrthoImage));
-            this->scale = 1.0f;
-        }
+        // Default constructor
+        OrthoImage() : Image<TYPE>(), easting(0), northing(0), zone(0), gsd(0) {}
 
         // Destructor
-        ~OrthoImage() {
-            this->Deallocate();
-        }
+        ~OrthoImage() {}
 
         // Read any GDAL-supported image.
         bool read(char *fileName) {
@@ -127,7 +130,7 @@ namespace pubgeo {
                 this->offset = 0.0;
             } else {
                 float minVal = MAX_FLOAT;
-                float maxVal = MAX_FLOAT;
+                float maxVal = -MAX_FLOAT;
                 for (unsigned int i = 0; i < this->bands; i++) {
                     poBand = poDataset->GetRasterBand(i + 1);
                     if (poBand == NULL) {
@@ -159,7 +162,13 @@ namespace pubgeo {
                 for (unsigned int ib = 0; ib < this->bands; ib++) {
                     // Read the next row.
                     poBand = poDataset->GetRasterBand(ib + 1);
-                    poBand->RasterIO(GF_Read, 0, irow, this->width, 1, poBandBlock, this->width, 1, BandDataType, 0, 0);
+                    CPLErr rv = poBand->RasterIO(GF_Read, 0, irow, this->width, 1, poBandBlock, this->width, 1, BandDataType, 0, 0);
+                    if (rv > CPLErr::CE_Warning) {
+                        // Deallocate memory.
+                        CPLFree(poBandBlock);
+                        delete poDataset;
+                        return false;
+                    }
                     switch (BandDataType) {
                         case GDT_Byte: {
                             for (unsigned int icols = 0; icols < this->width; icols++) {
@@ -210,7 +219,7 @@ namespace pubgeo {
         }
 
         // Write GEOTIFF image using GDAL.
-        bool write(char *fileName, bool convertToFloat = false, bool egm96 = false) {
+        bool write(const char *fileName, bool convertToFloat = false, bool egm96 = false) const {
             GDALAllRegister();
             const char *pszFormat = "GTiff";
             GDALDriver *poDriver = GetGDALDriverManager()->GetDriverByName(pszFormat);
@@ -236,9 +245,8 @@ namespace pubgeo {
             char *pszSRS_WKT = NULL;
             oSRS.SetProjCS("UTM (WGS84)");
             oSRS.SetUTM(abs(this->zone), (this->zone > 0));
-            int theZone = 255;
             int theZoneIsNorthern = 255;
-            theZone = oSRS.GetUTMZone(&theZoneIsNorthern);
+            oSRS.GetUTMZone(&theZoneIsNorthern);
             oSRS.SetWellKnownGeogCS("WGS84");
             if (!egm96)
                 oSRS.SetVertCS("WGS 84", "World Geodetic System 1984");
@@ -264,9 +272,13 @@ namespace pubgeo {
                             else
                                 raster[k] = (float(this->data[j][k]) * this->scale) + this->offset;
                         }
-                        poBand->RasterIO(GF_Write, 0, j, this->width, 1, raster, this->width, 1, theBandDataType,
+                        CPLErr rv = poBand->RasterIO(GF_Write, 0, j, this->width, 1, raster, this->width, 1, theBandDataType,
                                          sizeof(float) * this->bands,
                                          this->width * this->bands * sizeof(float));
+                        if (rv > CPLErr::CE_Warning) {
+                            delete[]raster;
+                            return false;
+                        }
                     }
                 }
                 delete[]raster;
@@ -275,9 +287,12 @@ namespace pubgeo {
                 for (unsigned int i = 1; i <= this->bands; i++) {
                     GDALRasterBand *poBand = poDstDS->GetRasterBand(i);
                     for (unsigned int j = 0; j < this->height; j++) {
-                        poBand->RasterIO(GF_Write, 0, j, this->width, 1, this->data[j], this->width, 1, theBandDataType,
+                        CPLErr rv = poBand->RasterIO(GF_Write, 0, j, this->width, 1, this->data[j], this->width, 1, theBandDataType,
                                          sizeof(TYPE) * this->bands,
                                          this->width * this->bands * sizeof(TYPE));
+                        if (rv > CPLErr::CE_Warning) {
+                            return false;
+                        }
                     }
                 }
             }
@@ -290,8 +305,11 @@ namespace pubgeo {
             // Read a PSET file (e.g., BPF or LAS).
             PointCloud pset;
             bool ok = pset.Read(fileName);
-            if (!ok) return false;
+            return ok && readFromPointCloud(pset, gsdMeters, mode);
+        }
 
+        // Create image from point cloud.
+        bool readFromPointCloud(const PointCloud& pset, float gsdMeters, MIN_MAX_TYPE mode = MIN_VALUE) {
             // Calculate scale and offset for conversion to TYPE.
             float minVal = pset.bounds.zMin - 1;    // Reserve zero for noData value
             float maxVal = pset.bounds.zMax + 1;
@@ -311,23 +329,29 @@ namespace pubgeo {
             this->gsd = gsdMeters;
 
             // Copy points into the ortho image.
-            if (mode == MIN_VALUE) {
-                for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    unsigned int x = int((pset.x(i) + pset.xOff - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
-                    unsigned int y = this->height - 1 - int((pset.y(i) + pset.yOff - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
-                    TYPE z = TYPE((pset.z(i) + pset.zOff - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z < this->data[y][x])) this->data[y][x] = z;
-                }
-            } else if (mode == MAX_VALUE) {
-                for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    unsigned int x = int((pset.x(i) + pset.xOff - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
-                    unsigned int y = this->height - 1 - int((pset.y(i) + pset.yOff - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
-                    TYPE z = TYPE((pset.z(i) + pset.zOff - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z > this->data[y][x])) this->data[y][x] = z;
+            std::function<bool(TYPE,TYPE)> compare;
+            if (mode == MIN_VALUE)
+                compare = std::less<TYPE>();
+            else
+                compare = std::greater<TYPE>();
+
+            double mx = 1.0/gsd;
+            double bx = mx*(pset.xOff - easting) - 0.5;
+            double my =-1.0/gsd;
+            double by = this->height-1 + my*(pset.yOff - northing) + 0.5;
+            double mz = 1/this->scale;
+            double bz = mz*(pset.zOff - this->offset);
+            for (unsigned long i = 0; i < pset.numPoints; i++) {
+                int x = mx*pset.x(i) + bx;
+                int y = my*pset.y(i) + by;
+                TYPE z = mz*pset.z(i) + bz;
+
+                for (int y1 = std::max(y,0); y1 <= std::min(y+1,(int) this->height-1); ++y1) {
+                    for (int x1 = std::max(x,0); x1 <= std::min(x+1,(int) this->width-1); ++x1) {
+                        TYPE& z0 = this->data[y1][x1];
+                        if (!z0 || compare(z,z0))
+                            z0 = z;
+                    }
                 }
             }
             return true;
@@ -338,53 +362,7 @@ namespace pubgeo {
             // Read a PSET file (e.g., BPF or LAS).
             PointCloud pset;
             bool ok = pset.Read(view);
-            if (!ok) return false;
-
-            // Calculate scale and offset for conversion to TYPE.
-            float minVal = pset.bounds.zMin - 1;    // Reserve zero for noData value
-            float maxVal = pset.bounds.zMax + 1;
-            float maxImageVal = (float) (pow(2.0, int(sizeof(TYPE) * 8)) - 1);
-            this->offset = minVal;
-            this->scale = (maxVal - minVal) / maxImageVal;
-
-            // Calculate image width and height.
-            this->width = (unsigned int) ((pset.bounds.xMax - pset.bounds.xMin) / gsdMeters + 1);
-            this->height = (unsigned int) ((pset.bounds.yMax - pset.bounds.yMin) / gsdMeters + 1);
-
-            // Allocate an ortho image.
-            this->Allocate(this->width, this->height);
-            this->easting = pset.bounds.xMin;
-            this->northing = pset.bounds.yMin;
-            this->zone = pset.zone;
-            this->gsd = gsdMeters;
-
-            // Copy points into the ortho image.
-            if (mode == MIN_VALUE) {
-               for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    double dx = view->getFieldAs<double>(pdal::Dimension::Id::X, i);
-                    double dy = view->getFieldAs<double>(pdal::Dimension::Id::Y, i);
-                    double dz = view->getFieldAs<double>(pdal::Dimension::Id::Z, i);
-                    unsigned int x = int((dx - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
-                    unsigned int y = this->height - 1 - int((dy - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
-                    TYPE z = TYPE((dz - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z < this->data[y][x])) this->data[y][x] = z;
-                }
-            } else if (mode == MAX_VALUE) {
-                for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    double dx = view->getFieldAs<double>(pdal::Dimension::Id::X, i);
-                    double dy = view->getFieldAs<double>(pdal::Dimension::Id::Y, i);
-                    double dz = view->getFieldAs<double>(pdal::Dimension::Id::Z, i);
-                    unsigned int x = int((dx - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
-                    unsigned int y = this->height - 1 - int((dy - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
-                    TYPE z = TYPE((dz - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z > this->data[y][x])) this->data[y][x] = z;
-                }
-            }
-            return true;
+            return ok && readFromPointCloud(pset, gsdMeters, mode);
         }
 
         // Count voids in an image.
@@ -453,30 +431,43 @@ namespace pubgeo {
 
             // Void fill down the pyramid.
             for (int k = level - 1; k >= 0; k--) {
+                OrthoImage<TYPE> ref(*pyramid[k]);
+
                 for (unsigned int j = 0; j < pyramid[k]->height; j++) {
                     for (unsigned int i = 0; i < pyramid[k]->width; i++) {
                         // Fill this pixel if it is currently void.
                         if (pyramid[k]->data[j][i] == 0) {
-                            unsigned int j2 = MIN(MAX(0, j / 2), pyramid[k + 1]->height - 1);
-                            unsigned int i2 = MIN(MAX(0, i / 2), pyramid[k + 1]->width - 1);
+                            unsigned int j2 = MIN(MAX(0, j / 2), pyramid[k+1]->height - 1);
+                            unsigned int i2 = MIN(MAX(0, i / 2), pyramid[k+1]->width - 1);
 
                             if (noSmoothing) {
                                 // Just use the closest pixel from above.
-                                pyramid[k]->data[j][i] = pyramid[k + 1]->data[j2][i2];
+                                pyramid[k]->data[j][i] = pyramid[k+1]->data[j2][i2];
                             } else {
-                                // Average neighboring pixels from above.
-                                float z = 0;
-                                int ct = 0;
-                                for (unsigned int jj = MAX(0, j2 - 1);
-                                     jj <= MIN(j2 + 1, pyramid[k + 1]->height - 1); jj++) {
-                                    for (unsigned int ii = MAX(0, i2 - 1);
-                                         ii <= MIN(i2 + 1, pyramid[k + 1]->width - 1); ii++) {
-                                        z += pyramid[k + 1]->data[jj][ii];
-                                        ct++;
+                                // Average neighboring pixels from around & above.
+                                LTYPE wts = 0;
+                                LTYPE ttl = 0;
+                                for (unsigned int j3 = j>0 ? j-1 : 0; j3 <= j+1; ++j3) {
+                                    for (unsigned int i3 = i>0 ? i-1 : 0; i3 <= i+1; ++i3) {
+                                        LTYPE z = 0;
+                                        if (j3 >=0 && i3 >= 0) {
+                                            if (j3 < pyramid[k]->height && i3 < pyramid[k]->width) {
+                                                z = ref.data[j3][i3];
+                                            }
+                                            if (!z && j3/2 < pyramid[k+1]->height && i3/2 < pyramid[k+1]->width) {
+                                                z = pyramid[k+1]->data[j3/2][i3/2];
+                                            }
+                                            if (z) {
+                                                LTYPE w = 1 + 1*(i3==i || j3==j);
+                                                ttl += w*z;
+                                                wts += w;
+                                            }
+                                        }
                                     }
                                 }
-                                z = z / ct;
-                                pyramid[k]->data[j][i] = (TYPE) z;
+                                if (wts) {
+                                    pyramid[k]->data[j][i] = ttl / wts;
+                                }
                             }
                         }
                     }
@@ -490,114 +481,99 @@ namespace pubgeo {
         }
 
         // Apply a median filter to an image.
-        void medianFilter(int rad, unsigned int dzShort) {
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    // Skip if void.
-                    if (this->data[j][i] == 0) continue;
-
-                    // Define bounds;
-                    unsigned int i1 = MAX(0, i - rad);
-                    unsigned int i2 = MIN(i + rad, this->width - 1);
-                    unsigned int j1 = MAX(0, j - rad);
-                    unsigned int j2 = MIN(j + rad, this->height - 1);
-
-                    // Add valid values to the list.
-                    std::vector<unsigned short> values;
-                    for (unsigned int jj = j1; jj <= j2; jj++) {
-                        for (unsigned int ii = i1; ii <= i2; ii++) {
-                            if (this->data[jj][ii] != 0) {
-                                values.push_back(this->data[jj][ii]);
-                            }
-                        }
-                    }
-
-                    // Find the median value.
-                    unsigned long num = values.size();
-                    if (num > 0) {
-                        std::sort(values.begin(), values.end());
-                        unsigned short medianValue = values[num / 2];
-                        if (fabs(float(medianValue) - float(this->data[j][i])) > dzShort)
-                            this->data[j][i] = medianValue;
-                    }
-                }
-            }
+        void medianFilter(int rad, TYPE dzScaled) {
+            quantileFilter(rad, dzScaled, 0.5);
         }
 
-        // Apply a minimum filter to an image.
-        void minFilter(int rad) {
-            OrthoImage<TYPE> tempImage;
-            tempImage.Allocate(this->width, this->height);
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    tempImage.data[j][i] = this->data[j][i];
-                }
-            }
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    // Skip if void.
-                    if (this->data[j][i] == 0) continue;
+        // Conceptionally, this is the same as a median filter, but instead of comparing the
+        // cell value to the median, we're comparing it against the specified quantile
+        void quantileFilter(int rad, TYPE dzScaled, float quantile) {
+            // Filter quantile
+            quantile = std::max(0.0f,std::min(1.0f,quantile));
 
-                    // Define bounds;
-                    unsigned int i1 = MAX(0, i - rad);
-                    unsigned int i2 = MIN(i + rad, this->width - 1);
-                    unsigned int j1 = MAX(0, j - rad);
-                    unsigned int j2 = MIN(j + rad, this->height - 1);
-
-                    // Check all neighbors.
-                    for (unsigned int jj = j1; jj <= j2; jj++) {
-                        for (unsigned int ii = i1; ii <= i2; ii++) {
-                            if (this->data[jj][ii] != 0) {
-                                if (this->data[jj][ii] < tempImage.data[j][i])
-                                    tempImage.data[j][i] = this->data[jj][ii];
-                            }
-                        }
-                    }
-                }
-            }
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    this->data[j][i] = tempImage.data[j][i];
-                }
-            }
+            // Apply filter to the image
+            Image<TYPE>::filter([&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
+                // Find quantile
+                size_t ix = std::min((size_t) floor(quantile * ngbrs.size()),ngbrs.size()-1);
+                std::partial_sort(ngbrs.begin(), ngbrs.begin() + (ix + 1), ngbrs.end());
+                STYPE qValue = static_cast<STYPE>(ngbrs[ix]);
+                // Only replace if it differs by more than dz from the median
+                if (abs(qValue - static_cast<STYPE>(ref)) > dzScaled)
+                    *val = qValue;
+            }, rad);
         }
 
-        void edgeFilter(int dzShort) {
-            OrthoImage<TYPE> tempImage;
-            tempImage.Allocate(this->width, this->height);
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    tempImage.data[j][i] = this->data[j][i];
-                }
-            }
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    // Skip if void.
-                    if (this->data[j][i] == 0) continue;
+        // Apply a minimum filter to an image (erosion)
+        void minFilter(int rad, TYPE dzScaled = 0) {
+            // Apply filter to the image
+            Image<TYPE>::filter([&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
+                // Find minimum
+                TYPE minValue = *min_element(ngbrs.begin(),ngbrs.end());
+                // Only replace if it's more than dz above the minimum
+                if (ref > minValue + dzScaled)
+                    *val = minValue;
+            }, rad);
+        }
 
-                    // Define bounds;
-                    unsigned int i1 = MAX(0, i - 1);
-                    unsigned int i2 = MIN(i + 1, this->width - 1);
-                    unsigned int j1 = MAX(0, j - 1);
-                    unsigned int j2 = MIN(j + 1, this->height - 1);
+        // Apply a minimum filter to an image (dilation)
+        void maxFilter(int rad, TYPE dzScaled = 0) {
+            // Apply filter to the image
+            Image<TYPE>::filter([&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
+                // Find minimum
+                TYPE maxValue = *max_element(ngbrs.begin(),ngbrs.end());
+                // Only replace if it's less than dz from the maximum
+                if (ref + dzScaled < maxValue)
+                    *val = maxValue;
+            }, rad);
+        }
 
-                    // If there's an edge with any neighbor, then remove.
-                    for (unsigned int jj = j1; jj <= j2; jj++) {
-                        for (unsigned int ii = i1; ii <= i2; ii++) {
-                            if (fabs(float(this->data[jj][ii] - this->data[j][i])) > dzShort) {
-                                tempImage.data[j][i] = 0;
-                            }
-                        }
-                    }
+        void edgeFilter(TYPE dzScaled) {
+            // Apply filter to the image
+            Image<TYPE>::filter([&](TYPE* val, const TYPE& ref, std::vector<TYPE> &ngbrs) {
+                // Set void if any neighbor differs by more than dz
+                if (std::any_of(ngbrs.begin(), ngbrs.end(), [&](TYPE ngbr){ return abs(static_cast<STYPE>(ngbr) - static_cast<STYPE>(ref)) > dzScaled; })) {
+                    *val = 0;
+                }
+            }, 1, 0, false);
+        }
+
+        // Provide compound assignment arithmetic operators
+        OrthoImage<TYPE>& operator +=(const OrthoImage<TYPE>& rhs) {
+            this->offset += rhs.offset;
+            float c = (rhs.scale / this->scale);
+            for (unsigned int j = 0; j < rhs.height; j++) {
+                for (unsigned int i = 0; i < rhs.width; i++) {
+                    this->data[j][i] += c*rhs.data[j][i];
                 }
             }
-            for (unsigned int j = 0; j < this->height; j++) {
-                for (unsigned int i = 0; i < this->width; i++) {
-                    this->data[j][i] = tempImage.data[j][i];
+            return *this;
+        }
+        OrthoImage<TYPE>& operator -=(const OrthoImage<TYPE>& rhs) {
+            this->offset -= rhs.offset;
+            float c = (rhs.scale / this->scale);
+            for (unsigned int j = 0; j < rhs.height; j++) {
+                for (unsigned int i = 0; i < rhs.width; i++) {
+                    if (std::numeric_limits<TYPE>::is_signed || (this->data[j][i] > c*rhs.data[j][i]))
+                        this->data[j][i] -= c*rhs.data[j][i];
+                    else
+                        this->data[j][i] = 0;
                 }
             }
+            return *this;
         }
     };
+
+    // Provide binary arithmetic operators
+    template <class TYPE>
+    inline OrthoImage<TYPE> operator+(OrthoImage<TYPE> lhs, const OrthoImage<TYPE>& rhs) {
+        lhs += rhs;
+        return lhs;
+    }
+    template <class TYPE>
+    inline OrthoImage<TYPE> operator-(OrthoImage<TYPE> lhs, const OrthoImage<TYPE>& rhs) {
+        lhs -= rhs;
+        return lhs;
+    }
 }
 
 #endif //PUBGEO_ORTHO_IMAGE_H
