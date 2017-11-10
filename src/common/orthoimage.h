@@ -120,7 +120,7 @@ namespace pubgeo {
                 this->offset = 0.0;
             } else {
                 float minVal = MAX_FLOAT;
-                float maxVal = MAX_FLOAT;
+                float maxVal = -MAX_FLOAT;
                 for (unsigned int i = 0; i < this->bands; i++) {
                     poBand = poDataset->GetRasterBand(i + 1);
                     if (poBand == NULL) {
@@ -518,7 +518,7 @@ namespace pubgeo {
         }
 
         // Apply a minimum filter to an image.
-        void minFilter(int rad) {
+        void minFilter(int rad, unsigned int dzShort = 0) {
             OrthoImage<TYPE> tempImage;
             tempImage.Allocate(this->width, this->height);
             for (unsigned int j = 0; j < this->height; j++) {
@@ -550,7 +550,8 @@ namespace pubgeo {
             }
             for (unsigned int j = 0; j < this->height; j++) {
                 for (unsigned int i = 0; i < this->width; i++) {
-                    this->data[j][i] = tempImage.data[j][i];
+                    if (this->data[j][i] > tempImage.data[j][i] + dzShort)
+                        this->data[j][i] = tempImage.data[j][i];
                 }
             }
         }
@@ -589,6 +590,18 @@ namespace pubgeo {
                     this->data[j][i] = tempImage.data[j][i];
                 }
             }
+        }
+
+        // Perform a deep copy of an image
+        void Clone(const OrthoImage<TYPE>* im) {
+            // Copy base class members
+            Image<TYPE>::Clone(im);
+
+            // Copy subclass members
+            easting = im->easting;
+            northing = im->northing;
+            zone = im->zone;
+            gsd = im->gsd;
         }
     };
 }

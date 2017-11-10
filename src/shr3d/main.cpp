@@ -87,6 +87,21 @@ int main(int argc, char **argv) {
     if (strcmp(ext, "tif") == 0) {
         bool ok = dsmImage.read(readFileName);
         if (!ok) return -1;
+
+        // Clone DSM
+        minImage.Clone(&dsmImage);
+
+        // Min filter, replacing only points differing by more than the AGL threshold.
+        minImage.minFilter(4, (unsigned int) (agl_meters / minImage.scale));
+
+        // Fill small voids in the DSM.
+        minImage.fillVoidsPyramid(true, 2);
+#ifdef DEBUG
+        // Write the MIN image as FLOAT.
+        char minOutFileName[1024];
+        sprintf(minOutFileName, "%s_MIN.tif\0", inputFileName);
+        minImage.write(minOutFileName, true);
+#endif
     } else if ((strcmp(ext, "las") == 0) || (strcmp(ext, "bpf") == 0)) {
         // First get the max Z values for the DSM.
         bool ok = dsmImage.readFromPointCloud(inputFileName, (float) dh_meters, shr3d::MAX_VALUE);
