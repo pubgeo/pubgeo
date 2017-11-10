@@ -87,8 +87,6 @@ namespace align3d {
 
         // Get random samples.
         srand(0);
-        long seed = 0;
-        long count = 0;
         std::vector<double> xlist;
         std::vector<double> ylist;
         for (long i = 0; i < maxSamples; i++) {
@@ -212,7 +210,7 @@ namespace align3d {
         bounds.width = bounds.xmax - bounds.xmin;
         bounds.height = bounds.ymax - bounds.ymin;
         double overlap_km = bounds.width / 1000.0 * bounds.height / 1000.0;
-        printf("Overlap = %d m x %d m = %f km\n", (long) bounds.width, (long) bounds.height, overlap_km);
+        printf("Overlap = %ld m x %ld m = %f km\n", (long) bounds.width, (long) bounds.height, overlap_km);
         if (overlap_km == 0.0) return false;
 
         // Estimate rigid body transform to align target points to reference.
@@ -257,5 +255,7 @@ namespace align3d {
             printf("Failed to write %s\n", outFileName);
             return false;
         }
+
+        return true;
     }
 }

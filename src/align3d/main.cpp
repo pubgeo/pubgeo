@@ -20,8 +20,8 @@ int main(int argc, char **argv) {
     // Parse command line parameters.
     char referenceFileName[1024];
     char targetFileName[1024];
-    sprintf(referenceFileName, argv[1]);
-    sprintf(targetFileName, argv[2]);
+    strcpy(referenceFileName, argv[1]);
+    strcpy(targetFileName, argv[2]);
     align3d::AlignParameters params;
     params.gsd = 1.0;
     params.maxt = 10.0;
