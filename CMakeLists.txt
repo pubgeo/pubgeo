@@ -16,13 +16,17 @@ ENDIF()
 
 FIND_PACKAGE(GDAL 1.9.0 REQUIRED)# Using Open Source Geo for Windows installer
 if (GDAL_FOUND)
-    include_directories("${GDAL_INCLUDE_DIR}")
+    include_directories(SYSTEM "${GDAL_INCLUDE_DIR}")
     mark_as_advanced(CLEAR GDAL_INCLUDE_DIR)
     mark_as_advanced(CLEAR GDAL_LIBRARY)
 else()
     message(FATAL_ERROR "GDAL support is required")
 endif()
 FIND_PACKAGE(PDAL 1.4.0 REQUIRED)
+
+if (CMAKE_COMPILER_IS_GNUCXX)
+       SET( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror -O3" )
+ENDIF()
 
 # This makes linking/including a little cleaner looking later
 SET(DAL_LIBS ${GDAL_LIBRARY} ${PDAL_LIBRARIES})
