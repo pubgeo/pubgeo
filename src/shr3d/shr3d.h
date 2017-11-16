@@ -66,8 +66,10 @@ namespace shr3d {
         DTM,
         CLASS,
         BUILDING,
+        BUILDING_OUTLINES,
         DSM2,
-        LABEL
+        LABEL,
+        LABELED_BUILDINGS,
     };
 
     class Shr3dder {
@@ -109,6 +111,13 @@ namespace shr3d {
                                       float minAreaMeters);
 
         void fillInsideBuildings(OrthoImage<unsigned char> &classImage);
+
+    private:
+        std::map<int,std::unordered_set<int>> findInnerPolygons(const OrthoImage<int>& bldgLabels,
+                const std::map<int,std::vector<Pixel>>& bounds);
+
+        void write(const std::string& filename, const std::map<int,std::vector<Pixel>>& bounds,
+                const OrthoImage<int>& bldgLabels);
     };
 }
 

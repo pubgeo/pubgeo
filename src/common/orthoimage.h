@@ -58,6 +58,15 @@ namespace pubgeo {
         // Default constructor
         OrthoImage() : Image<TYPE>(), easting(0), northing(0), zone(0), gsd(0) {}
 
+        // Alternate constructor (creates identically sized & located blank image)
+        template<class OTYPE>
+        OrthoImage(const OrthoImage<OTYPE>* i, unsigned int nbands = 1) :
+                Image<TYPE>(i, nbands),
+                easting(i->easting),
+                northing(i->northing),
+                zone(i->zone),
+                gsd(i->gsd) {}
+
         // Destructor
         ~OrthoImage() {}
 
@@ -218,6 +227,26 @@ namespace pubgeo {
             return true;
         }
 
+        GDALDataType getGDALDataType() const {
+            if ((typeid(TYPE) == typeid(uint8_t)) || (typeid(TYPE) == typeid(int8_t))) {
+                return GDT_Byte;
+            } else if (typeid(TYPE) == typeid(uint16_t)) {
+                return GDT_UInt16;
+            } else if (typeid(TYPE) == typeid(int16_t)) {
+                return GDT_Int16;
+            } else if (typeid(TYPE) == typeid(uint32_t)) {
+                return GDT_UInt32;
+            } else if (typeid(TYPE) == typeid(int32_t)) {
+                return GDT_Int32;
+            } else if (typeid(TYPE) == typeid(float)) {
+                return GDT_Float32;
+            } else if (typeid(TYPE) == typeid(double)) {
+                return GDT_Float64;
+            } else {
+                return GDT_Unknown;
+            }
+        }
+
         // Write GEOTIFF image using GDAL.
         bool write(const char *fileName, bool convertToFloat = false, bool egm96 = false) const {
             GDALAllRegister();
@@ -228,11 +257,9 @@ namespace pubgeo {
             if (!CSLFetchBoolean(papszMetadata, GDAL_DCAP_CREATE, false)) return false;
 
             // Get the GDAL data type to match the image data type.
-            GDALDataType theBandDataType = (GDALDataType) sizeof(TYPE);
-            if (strcmp(typeid(TYPE).name(), "float") == 0) theBandDataType = GDT_Float32;
-
-            // If converting this image to FLOAT, then update the output format type.
-            if (convertToFloat) theBandDataType = GDT_Float32;
+            GDALDataType theBandDataType = convertToFloat ? GDT_Float32 : getGDALDataType();
+            if (theBandDataType == GDT_Unknown)
+                return false;
 
             // Write geospatial metadata.
             char **papszOptions = nullptr;
