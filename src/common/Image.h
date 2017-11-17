@@ -16,8 +16,6 @@
 #include "disjoint_set.h"
 
 namespace pubgeo {
-    typedef std::pair<size_t,size_t> Pixel; // Pixel coordinate type
-
     template<class TYPE>
     class Image {
 
@@ -343,91 +341,35 @@ namespace pubgeo {
             }
         }
 
-        /**
-         * Traces all object boundaries in image
-         *
-         * Assumes image is a label image, as it uses equality to determine what pixels are grouped.
-         *
-         * All objects with non-zero labels will be traced.
-         *
-         * See traceBounds for details on algorithm.
-         *
-         * Output is map of closed, CW boundaries indexed by label.
-         */
-        std::map<TYPE,std::vector<Pixel>> traceBoundaries() const {
-            std::map<TYPE,std::vector<Pixel>> boundaries;
+        // Sets image to the src image upsampled by scale_factor, using nearest-neighbor algorithm
+        virtual void nn_upsample(const Image<TYPE>* src, unsigned int scale_factor) {
+            Deallocate();
+            width = src->width*scale_factor;
+            height = src->height*scale_factor;
+            bands = src->bands;
+            scale = src->scale;
+            offset = src->offset;
 
-            for (size_t j = 0; j < height; ++j) {
-                for (size_t i = 0; i < width; ++i) {
-                    const TYPE& v = data[j][i];
-                    if (v && !boundaries.count(v)) {
-                        boundaries.emplace(v,traceBounds(j,i));
-                    }
-                }
+            // First, allocate
+            data = new TYPE *[height];
+            for (size_t y = 0; y < height; ++y) {
+                data[y] = new TYPE[width * bands];
             }
 
-            return boundaries;
-        }
-
-        /**
-         * Traces object boundary starting at a location on its top
-         *
-         * Assumes image is a label image, as it uses equality to determine what pixels are grouped.
-         *
-         * Function will return a closed, CW boundary of object.  If object is foreground (pixel
-         * value > 0), the algorithm will use 8-connectivity; if it's background, algorithm will use
-         * 4-connectivity.
-         *
-         * Behavior is undefined if starting location is not on the top boundary of the object (i.e.
-         * there is no row < r that contains a pixel with the same label).
-         *
-         * Inputs are the starting pixel row & column, and the output is a vector of the traced coordinates.
-         */
-        std::vector<Pixel> traceBounds(size_t r, size_t c) const {
-            const TYPE& v = data[r][c]; // Label at location
-            std::vector<Pixel> b; // Structure that will contain pixel bounds
-
-            const std::array<int,8> dj = {1, 1, 0,-1,-1,-1, 0, 1}; // Delta row, indexed by direction
-            const std::array<int,8> di = {0,-1,-1,-1, 0, 1, 1, 1}; // Delta column, indexed by direction
-
-            int stride = v > 0 ? 1 : 2; // For foreground pixels, we'll have 8-connectivity, and 4-connectivity for background
-
-            size_t m = r; // Current pixel row
-            size_t n = c; // Current pixel column
-            int first_dir = -1; // First direction on boundary, initialize invalid
-            int last_dir = 0;   // Direction traveled from previous pixel to current pixel
-            int new_dir; // Direction from current pixel to next pixel
-            int fin_dir; // Last direction to check
-
-            while (true) {
-                b.emplace_back(m,n); // Add pixel location
-                fin_dir = (last_dir+4) % 8; // Final direction reflects back to the pixel we just came from
-
-                // Iterate through directions, first looking to the left relative to the last direction,
-                // and then progressively looking to the right
-                for (new_dir = (last_dir+6) % 8; new_dir != fin_dir; new_dir = (new_dir+stride) % 8) {
-                    size_t p = m+dj[new_dir]; // Test pixel row
-                    size_t q = n+di[new_dir]; // Test pixel column
-                    if (!(p < 0 || p >= height || q < 0 || q >= width) && (data[p][q] == v))
-                        break; // If pixel coordinate is valid and labeled correctly, break
+            // Second, copy
+            size_t y, x;
+            for (size_t sy = 0; sy < src->height; ++sy) {
+                y = sy*scale_factor;
+                for (size_t sx = 0; sx < src->width * bands; ++sx) {
+                    x = sx*scale_factor;
+                    for (size_t i = 0; i < scale_factor; ++i)
+                        data[y][x+i] = src->data[sy][sx]; // Duplicate element along columns
                 }
 
-                if ((new_dir == fin_dir) && (b.size()==1)) { // If there's only one pixel with this label
-                    b.emplace_back(m,n); // Close polygon
-                    break;
-                } else if (m==r && n==c && new_dir == first_dir) { // If we're back where we started
-                    break;
-                } else if (first_dir < 0) { // If this is the first segment, initialize first_dir
-                    first_dir = new_dir;
-                }
-
-                // Update state
-                m+=dj[new_dir];
-                n+=di[new_dir];
-                last_dir = new_dir;
+                // Duplicate rows
+                for (size_t j = 1; j < scale_factor; ++j)
+                    std::memcpy(data[y+j], data[y], width * bands * sizeof(TYPE));
             }
-
-            return b;
         }
     };
 }

@@ -564,6 +564,15 @@ namespace pubgeo {
             }, 1, 0, false);
         }
 
+        // Sets image to the src image upsampled by scale_factor, using nearest-neighbor algorithm
+        void nn_upsample(const OrthoImage<TYPE>* src, unsigned int scale_factor) {
+            gsd = src->gsd / scale_factor;
+            easting = src->easting;// - 0.5*src->gsd + 0.5*gsd;
+            northing = src->northing;
+            zone = src->zone;
+            Image<TYPE>::nn_upsample(src, scale_factor);
+        }
+
         // Provide compound assignment arithmetic operators
         OrthoImage<TYPE>& operator +=(const OrthoImage<TYPE>& rhs) {
             this->offset += rhs.offset;

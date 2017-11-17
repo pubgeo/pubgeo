@@ -4,13 +4,15 @@
 // shr3d.cpp
 //
 
+#include "shr3d.h"
+
 #include <stdio.h>
 #include <math.h>
 #include <float.h>
 #include <climits>
 #include <vector>
-#include "shr3d.h"
-#include "ogrsf_frmts.h"
+
+#include "geo_polygon.h"
 
 using namespace shr3d;
 
@@ -67,10 +69,17 @@ void Shr3dder::process(const OrthoImage<unsigned short> &dsmImage, const OrthoIm
     if (!outputFilenames[LABELED_BUILDINGS].empty())
         bldgLabels.write(outputFilenames[LABELED_BUILDINGS].c_str(), false);
 
-    std::map<int,std::vector<shr3d::Pixel>> bounds = bldgLabels.traceBoundaries();
+    shr3d::OrthoImage<int> bldgLabels3;
+    bldgLabels3.nn_upsample(&bldgLabels,3);
+
+    if (!outputFilenames[LABELED_BUILDINGS_3].empty())
+        bldgLabels3.write(outputFilenames[LABELED_BUILDINGS_3].c_str(), false);
+
+    std::map<int,GeoPolygon<uint32_t>> bounds = GeoPolygon<uint32_t>::traceBoundaries(bldgLabels3);
+    printf("Traced %lu building outlines.\n",bounds.size());
 
     if (!outputFilenames[BUILDING_OUTLINES].empty())
-        write(outputFilenames[BUILDING_OUTLINES],bounds,bldgLabels);
+        GeoPolygon<uint32_t>::write(outputFilenames[BUILDING_OUTLINES],bounds);
 }
 
 bool Shr3dder::createDSM(const PointCloud& pset, OrthoImage<unsigned short> &dsmImage) {
@@ -965,100 +974,4 @@ void Shr3dder::fillInsideBuildings(OrthoImage<unsigned char> &classImage) {
         }
     }
     printf("Removed %d tree pixels inside building label groups.\n", numFilled);
-}
-
-std::map<int,std::unordered_set<int>> Shr3dder::findInnerPolygons(
-        const shr3d::OrthoImage<int>& bldgLabels,
-        const std::map<int,std::vector<shr3d::Pixel>>& bounds) {
-    std::map<int,std::unordered_set<int>> innerPolyList;
-
-    // Iterate trough all interior bounds
-    auto stop = bounds.lower_bound(0); // Returns iterator to first label >= 0
-    for (auto iter = bounds.begin(); iter!=stop; ++iter) {
-        // Get first pixel in boundary list
-        const shr3d::Pixel& px = iter->second.front();
-        // Because of how inner boundaries are constructed, the pixel one row above the first pixel
-        // in the boundary list is guaranteed to be the label of the surrounding object.
-        innerPolyList[bldgLabels.data[px.first-1][px.second]].insert(iter->first);
-    }
-    return innerPolyList;
-}
-
-void Shr3dder::write(const std::string& filename, const std::map<int,std::vector<shr3d::Pixel>>& bounds,
-        const shr3d::OrthoImage<int>& bldgLabels) {
-    // Connect objects with their holes
-    std::map<int,std::unordered_set<int>> innerPolygonsMapping = findInnerPolygons(bldgLabels, bounds);
-
-    // Need to delete file if it already exists
-    if (FILE *file = fopen(filename.c_str(), "r")) {
-        fclose(file);
-        std::remove(filename.c_str());
-    }
-
-    // GDAL setup
-    OGRRegisterAll();
-    OGRSFDriver* poDriver = OGRSFDriverRegistrar::GetRegistrar()->GetDriverByName("ESRI Shapefile");
-    if(poDriver == NULL) {
-        printf("ERROR: ESRI Shapefile driver not available.\n");
-        return;
-    }
-
-    OGRDataSource* poDS = poDriver->CreateDataSource(filename.c_str(), NULL);
-    if(poDS == NULL) {
-        printf("ERROR: Creation of output shapefile '%s' failed.\n", filename.c_str());
-        return;
-    }
-
-    // Set coordinate system
-    OGRSpatialReference oSRS;
-    oSRS.SetProjCS("UTM (WGS84)");
-    oSRS.SetUTM(abs(bldgLabels.zone), (bldgLabels.zone > 0));
-    int theZoneIsNorthern = 255;
-    oSRS.GetUTMZone(&theZoneIsNorthern);
-    oSRS.SetWellKnownGeogCS("WGS84");
-
-    OGRLayer* poLayer = poDS->CreateLayer("buildings", &oSRS, wkbMultiPolygon, NULL);
-    if(poLayer == NULL) {
-        printf("ERROR: Layer creation failed.\n");
-        return;
-    }
-
-    OGRFieldDefn oField("Label", OFTInteger);
-    if(poLayer->CreateField(&oField) != OGRERR_NONE) {
-        printf("ERROR: Creating label field failed.\n");
-        return;
-    }
-
-    // Populate shapefile with data
-    for (auto iter = bounds.lower_bound(0); iter != bounds.end(); ++iter) {
-        OGRFeature* poFeature = OGRFeature::CreateFeature(poLayer->GetLayerDefn());
-        int l = iter->first;
-        poFeature->SetField("Label", l);
-        // Add geometry
-        OGRPolygon polygon;
-        OGRLinearRing outRing;
-        for (const Pixel& pt : iter->second)
-            outRing.addPoint(bldgLabels.easting+bldgLabels.gsd*(pt.second+0.5),
-                    bldgLabels.northing+bldgLabels.gsd*(bldgLabels.height-pt.first-0.5));
-        polygon.addRing(&outRing);
-
-        for (auto innerBoundLabel : innerPolygonsMapping[l]) {
-            OGRLinearRing innerRing;
-            for (const Pixel& pt : bounds.at(innerBoundLabel))
-                innerRing.addPoint(bldgLabels.easting+bldgLabels.gsd*(pt.second+0.5),
-                        bldgLabels.northing+bldgLabels.gsd*(bldgLabels.height-pt.first-0.5));
-            polygon.addRing(&innerRing);
-        }
-
-        poFeature->SetGeometry(&polygon);
-
-        // Add feature to file
-        if(poLayer->CreateFeature(poFeature) != OGRERR_NONE) {
-            printf("ERROR: Failed to create feature in shapefile.\n");
-            return;
-        }
-        OGRFeature::DestroyFeature(poFeature);
-    }
-
-    GDALClose(poDS);
 }
