@@ -75,11 +75,20 @@ void Shr3dder::process(const OrthoImage<unsigned short> &dsmImage, const OrthoIm
     if (!outputFilenames[LABELED_BUILDINGS_3].empty())
         bldgLabels3.write(outputFilenames[LABELED_BUILDINGS_3].c_str(), false);
 
-    std::map<int,GeoPolygon<uint32_t>> bounds = GeoPolygon<uint32_t>::traceBoundaries(bldgLabels3);
+    std::map<int,GeoPolygon<double>> bounds = GeoPolygon<double>::traceBoundaries(bldgLabels3);
     printf("Traced %lu building outlines.\n",bounds.size());
 
+    std::map<int,GeoPolygon<double>> new_bounds;
+    for (std::pair<int,GeoPolygon<double>> pr : bounds) {
+        GeoPolygon<double> poly = pr.second.buildingSimplify();
+        if (poly.ring.empty())
+            continue;
+        new_bounds[pr.first] = poly;
+    }
+    printf("After simplifying, left with %lu building outlines.\n",new_bounds.size());
+
     if (!outputFilenames[BUILDING_OUTLINES].empty())
-        GeoPolygon<uint32_t>::write(outputFilenames[BUILDING_OUTLINES],bounds);
+        GeoPolygon<double>::write(outputFilenames[BUILDING_OUTLINES],new_bounds);
 }
 
 bool Shr3dder::createDSM(const PointCloud& pset, OrthoImage<unsigned short> &dsmImage) {
