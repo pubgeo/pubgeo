@@ -309,7 +309,7 @@ public:
      *
      * SCALE parameter controls the size of features to retain; units are pixels
      */
-    GeoPolygon<double> buildingSimplify(unsigned int scale = 18) const {
+    GeoPolygon<double> buildingSimplify(unsigned int scale = 36) const {
         // Initialize new polygon
         GeoPolygon<double> poly;
         poly.easting = easting;
