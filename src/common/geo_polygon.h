@@ -235,14 +235,14 @@ public:
             return false;
 
         // GDAL setup
-        OGRRegisterAll();
-        OGRSFDriver* poDriver = OGRSFDriverRegistrar::GetRegistrar()->GetDriverByName("ESRI Shapefile");
+        GDALAllRegister();
+        GDALDriver* poDriver = GetGDALDriverManager()->GetDriverByName("ESRI Shapefile");
         if(poDriver == NULL) {
             printf("ERROR: ESRI Shapefile driver not available.\n");
             return false;
         }
 
-        OGRDataSource* poDS = poDriver->CreateDataSource(filename.c_str(), NULL);
+        GDALDataset* poDS = poDriver->Create(filename.c_str(), 0, 0, 0, GDT_Unknown, NULL);
         if(poDS == NULL) {
             printf("ERROR: Creation of output shapefile '%s' failed.\n", filename.c_str());
             return false;
