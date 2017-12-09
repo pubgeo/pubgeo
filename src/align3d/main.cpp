@@ -62,11 +62,12 @@ int main(int argc, char **argv) {
 
 // Print command line arguments.
 void printArguments() {
-    printf("Command Line: align-3d <reference> <target> <parameters>\n");
+    printf("Command Line: align3d <reference> <target> <parameters>\n");
     printf("Parameters:\n");
     printf("  maxdz= Max local Z difference (meters) for matching\n");
     printf("  gsd=   Ground Sample Distance (GSD) for gridding (meters)\n");
-    printf("  maxt=	 Maximum XYZ translation in search (meters); default = 10.0\n");
+    printf("  maxt=	 Maximum horizontal translation in search (meters); default = 10.0\n");
     printf("Examples:\n");
-    printf("  align-3d ref.las tgt.las maxt=10.0 gsd=0.5 maxdz=0.5 \n\n");
+    printf("  align3d ref.las tgt.las maxt=10.0 gsd=0.5 maxdz=0.5\n\n");
 }
+

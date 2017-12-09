@@ -177,6 +177,11 @@ namespace align3d {
         printf("Reading reference point cloud: %s\n", referenceFileName);
         OrthoImage<unsigned short> referenceDSM;
         bool ok = referenceDSM.readFromPointCloud(referenceFileName, params.gsd, MAX_VALUE);
+		if (!ok) {
+			// If not a point cloud, then try to read as GeoTIFF.
+			ok = referenceDSM.read(referenceFileName);
+			if (ok) params.gsd = referenceDSM.gsd;
+		}
         if (!ok) {
             printf("Failed to read %s\n", referenceFileName);
             return false;
@@ -191,6 +196,14 @@ namespace align3d {
         printf("Reading target point cloud: %s\n", targetFileName);
         OrthoImage<unsigned short> targetDSM;
         ok = targetDSM.readFromPointCloud(targetFileName, params.gsd, MAX_VALUE);
+		if (!ok) {
+			// If not a point cloud, then try to read as GeoTIFF.
+			ok = targetDSM.read(targetFileName);
+			if (ok && targetDSM.gsd != params.gsd) {
+				ok = false;
+				printf("Input files are GeoTIFF and point spacing does not match.\n");
+			}
+		}
         if (!ok) {
             printf("Failed to read %s\n", targetFileName);
             return false;
