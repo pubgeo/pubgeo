@@ -1,36 +1,31 @@
-These instructions are not complete and do not currently result in a working build. It is close, and subsets of the project have worked with PDAL. The final project could not be entirely integrated.
+While only the docker version of align3d and shr3d is fully supported, it is possible to successfully build on windows. The following instructions demonstrate one path to a successful build.
 
-Download and run OSGeo4W64 Installer.
+Download and run OSGeo4W64 (64-bit) Installer (http://download.osgeo.org/osgeo4w/osgeo4w-setup-x86_64.exe)
 	Select advanced installation. Everything else until packages is default.
 		From Command Line Utilities select:
 			Gdal, gdal-dev, pdal
-			Install packages to meet dependencies. (page after package selection)
-	
+		Install packages to meet dependencies (page after package selection).
+
+If you did not install OSGeo4W64 in the standard location (C:\OSGeo4W64), do the following:
+	In CMakeLists.txt, modify SET(CMAKE_PREFIX_PATH "...") to point to your OSGeo4W64 install directory
+	Edit ...\OSGeo4W64\lib\pdal\cmake\PDALConfig.cmake, ...\OSGeo4W64\lib\pdal\cmake\PDALTargets.cmake, and ...\OSGeo4W64\lib\pdal\cmake\PDALTargets-relwithdebinfo.cmake so that all references to C:\OSGeo4W64 are replaced with the actual install location.
+
 Download and install visual studio 2017 community (REQUIRES SYSTEM-RESTART)
 	Install packages:
-		.Net desktop development (possibly unnecessary)
 		Desktop development with c++
-			** include c++/cli support, std lib mods, mfc and atl, win8.1 sdk **
-			https://stackoverflow.com/questions/42701019/problems-generating-solution-for-vs-2017-with-cmake
-	This combination of packages generates a compatible visual studio environment. Some packages may be unnecessary (mfc +atl, or .net desktop env)
-		
-	Load project (folder with CmakeLists.txt) AS 64 BIT!! VS will probably default you to X86
-		Visual studio should start processing the cmake file
-			cmake will probably fail:
-				Missing c/cxx compiler
-					see above package installation, you probably missed a package that was necessary in 2017 vs installation
-				pdal config fails "file or directory x referenced by variable _foo does no exist ! (typo from source)
-					edit C:\OSGeo4W64\lib\pdal\cmake\PDALConfig.cmake
-						replace lines 31+ with: (Changing the OSGEO4W64_INSTALLATION_LOCATION respective to your installation directory) This is due PDAL being compiled on a different machine with a different folder structure
-							set(OSGEO4W64_INSTALLATION_LOCATION "C:/OSGeo4W64/")
-							set(PDAL_INCLUDE_DIRS "${OSGEO4W64_INSTALLATION_LOCATION}include")
-							set(PDAL_LIBRARY_DIRS "${OSGEO4W64_INSTALLATION_LOCATION}lib")
-							include("${CMAKE_CURRENT_LIST_DIR}/PDALTargets.cmake")
-							set(PDAL_LIBRARIES ${PDAL_LIBRARY_DIRS}/pdalcpp.lib ${PDAL_LIBRARY_DIRS}/pdal_util.lib)
-							check_required_components(PDAL)
+			** include c++/cli support and std lib mods **
 
-These instructions will generate a linker error missing what appear to be network conversions for ints/shorts/etc referenced in PDALs BEExtractor.
-Possible solutions (Scott's best guesses)
-    Perhaps un-defining 'WIN32_LEAN_AND_MEAN'? It was used to remove macros that were breaking the build. IE MAX(..) and MIN(..)
-    PDAL build for windows on OSGeo package improperly built/configured (Partly already true
-    Build PDAL on local machine and
+Open Visual Studio
+	Select File->Open->Folder..., and browse to and select the pubgeo folder
+		Visual studio will process the cmake file, and create a .vs folder within the pubgeo folder
+			Confirm CMake output does not show any errors
+		Select CMake->Build All
+			Confirm Build output shows "Build succeeded."
+			Verify shr3d.exe and align3d.exe exist in the pubgeo/build/x64-Debug folder
+
+Open command prompt
+	Run ...\OSGeo4W64bin\o4w_env.bat; this will configure required environment variables for the session
+	cd to ...\pubgeo\build\x64-Debug
+	Run align3d or shr3d:
+		align3d.exe ...\path\to\reference.las ...\path\to\alignMe.las gsd=1.0 maxt=10.0
+		shr3d.exe ...\path\to\shr3dMe.las DH=2 DZ=1 AGL=2 AREA=50

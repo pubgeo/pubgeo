@@ -5,10 +5,11 @@ SET(CMAKE_CXX_STANDARD 11)
 SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 IF(WIN32)
-       MESSAGE(ERROR "Windows builds are currently not working due to erroneous linking errors.")
        # Default install directory
        MESSAGE(WARNING "Advance INSTALL OSGeo4W64. Include: (Command Line Tools) pdal and its dependencies. Potentially requires change to PDALConfig.cmake.")
        SET(CMAKE_PREFIX_PATH "C:\\OSGeo4W64\\")
+       
+       SET(CMAKE_BUILD_TYPE RelWithDebInfo)
 
        # This part is for auto-defines in windows libraries that cause macro errors in our code
        add_definitions(-DWIN32_LEAN_AND_MEAN -DNOMINMAX)

@@ -29,7 +29,7 @@ namespace pubgeo {
 
         ~PointCloud();
 
-        static bool TransformPointCloud(const char *inputFileName, const char *outputFileName,
+        static bool TransformPointCloud(std::string inputFileName, std::string outputFileName,
                                         float translateX, float translateY, float translateZ);
 
         bool Read(const char *fileName);
