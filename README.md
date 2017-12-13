@@ -5,19 +5,22 @@ and open source software. For more information on this and other efforts, please
 ## SHR3D
 
 Shareable High Resolution 3D Point Cloud Classification
->SHR3D classifies a 3D point cloud to generate simple raster products, including a Digital Surface Model (DSM), Digital 
-Terrain Model (DTM), and a classification image labeling ground, buildings, and trees.
+>SHR3D classifies a 3D point cloud to generate simple geospatial products, including: a Digital Surface Model (DSM); a Digital 
+Terrain Model (DTM); a classification image labeling ground, buildings, and trees; and a simplified building outlines vector product.
 
 ### SHR3D Usage
     ./shr3d <Input File(LAS|TIF)> DH=<Horizontal uncertainty(m)> DZ=<Vertical uncertainty(m)> AGL=<Min building height(m)> AREA=<Min building area(m^2)>
 
 #### Example:
     ./shr3d shr3dMe.las DH=0.5 DZ=0.5 AGL=2 AREA=50
-This will produce a multiple tif files as a result:
-* **Classification image**- 'Colored' by classification for each pixel: buildings, ground, and trees
-* **Building image**- Binary mask of all detected buildings
-* **DSM**- Digital surface model (reflective surface)
-* **DTM**- Digital terrain model (bare earth, or ground)
+This will produce multiple files as a result:
+* Raster files (*.tif):
+  * **Classification image**- 'Colored' by classification for each pixel: buildings, ground, and trees
+  * **Building image**- Binary mask of all detected buildings
+  * **DSM**- Digital surface model (reflective surface)
+  * **DTM**- Digital terrain model (bare earth, or ground)
+* Vector files (shapefiles: *.shp, *.prj, *.shx, *.dbf):
+  * **Building outlines**- Simplified polygons of detected building perimeters
 
 ## ALIGN3D
 Align 3D Point Cloud Registration Tool

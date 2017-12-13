@@ -8,14 +8,18 @@
 #define PUBGEO_IMAGE_H
 
 #include <cstring>
+#include <set>
 #include <thread>
+#include <unordered_set>
 #include <vector>
+
+#include "disjoint_set.h"
+
 namespace pubgeo {
     template<class TYPE>
     class Image {
 
     public:
-
         unsigned int width;
         unsigned int height;
         unsigned int bands;
@@ -25,6 +29,18 @@ namespace pubgeo {
 
         // Default constructor
         Image() : width(0), height(0), bands(0), scale(1), offset(0), data(nullptr) {}
+
+        // Alternate constructor (creates identically sized, blank image)
+        template<class OTYPE>
+        Image(const Image<OTYPE>* i, unsigned int nbands = 1) :
+                width(0),
+                height(0),
+                bands(0),
+                scale(i->scale),
+                offset(i->offset),
+                data(nullptr) {
+            Allocate(i->width,i->height,nbands);
+        }
 
         // Copy constructor
         Image(const Image<TYPE>& i) :
@@ -238,6 +254,121 @@ namespace pubgeo {
 
             for (unsigned int k = 0; k < N; ++k) {
                 workers.at(k).join();
+            }
+        }
+
+        /**
+         * Labels connected components and interior holes
+         *
+         * Assumes src_im is a binary image, where 0 labels background and !0 labels foreground pixels
+         *
+         * label_im will contain positive labels for foreground objects, and negative labels for background
+         * objects.  Any background that is connected to the image edge will be labeled 0.
+         *
+         * Functionality is loosely based on bwconncomp, but algorithm is drawn from:
+         * https://en.wikipedia.org/wiki/Connected-component_labeling#Two-pass
+         */
+        template <class OTYPE>
+        void labelConnectedComponentsFrom(const Image<OTYPE>* src_im) {
+            size_t M = src_im->height;
+            size_t N = src_im->width;
+
+            // Initial labeling
+            std::set<size_t> ngbrs;
+            DisjointSet fg_labels;
+            DisjointSet bg_labels;
+            bg_labels.add(); // Add exterior background
+
+            for (size_t j = 0; j < M; ++j) {
+                for (size_t i = 0; i < N; ++i) {
+                    ngbrs.clear();
+                    DisjointSet* labels;
+
+                    // Find neighbors
+                    if (src_im->data[j][i]) {
+                        // Foreground
+                        labels = &fg_labels;
+
+                        // Find neighbors (8-connectivity)
+                        if (j) {
+                            if (i && src_im->data[j-1][i-1])
+                                ngbrs.insert(data[j-1][i-1]);
+                            if (src_im->data[j-1][i])
+                                ngbrs.insert(data[j-1][i]);
+                            if (i<N-1 && src_im->data[j-1][i+1])
+                                ngbrs.insert(data[j-1][i+1]);
+                        }
+                        if (i && src_im->data[j][i-1])
+                            ngbrs.insert(data[j][i-1]);
+                    } else {
+                        // Background
+                        labels = &bg_labels;
+
+                        // Find neighbors (4-connectivity)
+                        if (!j || j==M-1 || !i || i==N-1) // If we're on the edge
+                            ngbrs.insert(0);
+                        if (j && !src_im->data[j-1][i])
+                            ngbrs.insert(data[j-1][i]);
+                        if (i && !src_im->data[j][i-1])
+                            ngbrs.insert(data[j][i-1]);
+                    }
+
+                    if (ngbrs.empty()) {
+                        // Assign new label
+                        data[j][i] = (TYPE) labels->add();
+                    } else {
+                        // Assign pixel the smallest label
+                        size_t lbl = *ngbrs.begin();
+                        data[j][i] = (TYPE) lbl;
+
+                        // Link neighbors
+                        for (size_t l : ngbrs)
+                            labels->merge(l,lbl);
+                    }
+                }
+            }
+
+            // Simplify labels
+            std::vector<TYPE> bg_final_labels = bg_labels.flatten<TYPE>();
+            std::vector<TYPE> fg_final_labels = fg_labels.flatten<TYPE>(1);
+
+            // Pass 2
+            for (size_t j = 0; j < M; ++j) {
+                for (size_t i = 0; i < N; ++i) {
+                    TYPE &lbl = data[j][i];
+                    lbl = src_im->data[j][i] ? fg_final_labels[lbl] : -bg_final_labels[lbl];
+                }
+            }
+        }
+
+        // Sets image to the src image upsampled by scale_factor, using nearest-neighbor algorithm
+        virtual void nn_upsample(const Image<TYPE>* src, unsigned int scale_factor) {
+            Deallocate();
+            width = src->width*scale_factor;
+            height = src->height*scale_factor;
+            bands = src->bands;
+            scale = src->scale;
+            offset = src->offset;
+
+            // First, allocate
+            data = new TYPE *[height];
+            for (size_t y = 0; y < height; ++y) {
+                data[y] = new TYPE[width * bands];
+            }
+
+            // Second, copy
+            size_t y, x;
+            for (size_t sy = 0; sy < src->height; ++sy) {
+                y = sy*scale_factor;
+                for (size_t sx = 0; sx < src->width * bands; ++sx) {
+                    x = sx*scale_factor;
+                    for (size_t i = 0; i < scale_factor; ++i)
+                        data[y][x+i] = src->data[sy][sx]; // Duplicate element along columns
+                }
+
+                // Duplicate rows
+                for (size_t j = 1; j < scale_factor; ++j)
+                    std::memcpy(data[y+j], data[y], width * bands * sizeof(TYPE));
             }
         }
     };

@@ -4,12 +4,15 @@
 // shr3d.cpp
 //
 
+#include "shr3d.h"
+
 #include <stdio.h>
 #include <math.h>
 #include <float.h>
 #include <climits>
 #include <vector>
-#include "shr3d.h"
+
+#include "geo_polygon.h"
 
 using namespace shr3d;
 
@@ -24,7 +27,7 @@ void Shr3dder::process(const OrthoImage<unsigned short> &dsmImage, const OrthoIm
 
     ImageType last_output = DSM;
     for (const std::pair<ImageType,std::string>& o : outputFilenames)
-        if (o.first > last_output && o.first <= BUILDING)
+        if (o.first > last_output && o.first <= BUILDING_OUTLINES)
             last_output = o.first;
 
     if (last_output <= MIN)
@@ -56,6 +59,36 @@ void Shr3dder::process(const OrthoImage<unsigned short> &dsmImage, const OrthoIm
 
     if (!outputFilenames[BUILDING].empty())
         bldgImage.write(outputFilenames[BUILDING].c_str(), false);
+
+    if (last_output <= BUILDING)
+        return;
+
+    shr3d::OrthoImage<int> bldgLabels(&bldgImage);
+    bldgLabels.labelConnectedComponentsFrom(&bldgImage);
+
+    if (!outputFilenames[LABELED_BUILDINGS].empty())
+        bldgLabels.write(outputFilenames[LABELED_BUILDINGS].c_str(), false);
+
+    shr3d::OrthoImage<int> bldgLabels3;
+    bldgLabels3.nn_upsample(&bldgLabels,3);
+
+    if (!outputFilenames[LABELED_BUILDINGS_3].empty())
+        bldgLabels3.write(outputFilenames[LABELED_BUILDINGS_3].c_str(), false);
+
+    std::map<int,GeoPolygon<double>> bounds = GeoPolygon<double>::traceBoundaries(bldgLabels3);
+    printf("Traced %lu building outlines.\n",bounds.size());
+
+    std::map<int,GeoPolygon<double>> new_bounds;
+    for (std::pair<int,GeoPolygon<double>> pr : bounds) {
+        GeoPolygon<double> poly = pr.second.buildingSimplify();
+        if (poly.ring.empty())
+            continue;
+        new_bounds[pr.first] = poly;
+    }
+    printf("After simplifying, left with %lu building outlines.\n",new_bounds.size());
+
+    if (!outputFilenames[BUILDING_OUTLINES].empty())
+        GeoPolygon<double>::write(outputFilenames[BUILDING_OUTLINES],new_bounds);
 }
 
 bool Shr3dder::createDSM(const PointCloud& pset, OrthoImage<unsigned short> &dsmImage) {
@@ -120,11 +153,7 @@ void Shr3dder::createDTM(const OrthoImage<unsigned short> &dsmImage, const Ortho
 
 
     // Generate label image.
-    labelImage.Allocate(dsmImage.width, dsmImage.height);
-    labelImage.easting = dsmImage.easting;
-    labelImage.northing = dsmImage.northing;
-    labelImage.zone = dsmImage.zone;
-    labelImage.gsd = dsmImage.gsd;
+    labelImage = OrthoImage<unsigned long>(&dsmImage);
 
     // Allocate a DTM image as SHORT and copy in the Min DSM values.
     dtmImage = minImage;
@@ -163,12 +192,7 @@ OrthoImage<unsigned char> Shr3dder::labelClasses(
     unsigned int dz_short = (unsigned int) (dz_meters / dsmImage.scale);
     unsigned int agl_short = (unsigned int) (agl_meters / dsmImage.scale);
 
-    OrthoImage<unsigned char> classImage;
-    classImage.Allocate(labelImage.width, labelImage.height);
-    classImage.easting = dsmImage.easting;
-    classImage.northing = dsmImage.northing;
-    classImage.zone = dsmImage.zone;
-    classImage.gsd = dsmImage.gsd;
+    OrthoImage<unsigned char> classImage(&dsmImage);
     for (unsigned int j = 0; j < classImage.height; j++) {
         for (unsigned int i = 0; i < classImage.width; i++) {
             // Set default as unlabeled.
@@ -601,8 +625,7 @@ void Shr3dder::classifyGround(OrthoImage<unsigned long> &labelImage, OrthoImage<
 
     // Allocate a binary label image to indicate voids to be filled.
     // The long integer label image has unique labels for objects detected in each iteration.
-    OrthoImage<unsigned char> voidImage;
-    voidImage.Allocate(labelImage.width, labelImage.height);
+    OrthoImage<unsigned char> voidImage(&labelImage);
 
     // Iteratively label and remove objects from the DEM.
     // Each new iteration removes debris not identified by the previous iteration.
@@ -787,8 +810,7 @@ void Shr3dder::classifyNonGround(OrthoImage<unsigned short> &dsmImage, OrthoImag
 
     // Erode and then dilate labels to remove narrow objects.
     {
-        OrthoImage<unsigned long> tempImage;
-        tempImage.Allocate(labelImage.width, labelImage.height);
+        OrthoImage<unsigned long> tempImage(&labelImage);
         for (unsigned int j = 0; j < labelImage.height; j++) {
             for (unsigned int i = 0; i < labelImage.width; i++) {
                 tempImage.data[j][i] = labelImage.data[j][i];
@@ -919,8 +941,7 @@ addClassNeighbors(std::vector<PixelType> &neighbors, OrthoImage<unsigned char> &
 // Fill in any pixels labeled tree that fall entirely within a labeled building group.
 void Shr3dder::fillInsideBuildings(OrthoImage<unsigned char> &classImage) {
     int numFilled = 0;
-    OrthoImage<unsigned char> labeled;
-    labeled.Allocate(classImage.width, classImage.height);
+    OrthoImage<unsigned char> labeled(&classImage);
     for (unsigned int j = 0; j < classImage.height; j++) {
         for (unsigned int i = 0; i < classImage.width; i++) {
             bool consider = ((labeled.data[j][i] == 0) && (classImage.data[j][i] == LAS_TREE));
@@ -963,4 +984,3 @@ void Shr3dder::fillInsideBuildings(OrthoImage<unsigned char> &classImage) {
     }
     printf("Removed %d tree pixels inside building label groups.\n", numFilled);
 }
-

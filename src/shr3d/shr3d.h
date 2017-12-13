@@ -66,8 +66,11 @@ namespace shr3d {
         DTM,
         CLASS,
         BUILDING,
+        BUILDING_OUTLINES,
         DSM2,
-        LABEL
+        LABEL,
+        LABELED_BUILDINGS,
+        LABELED_BUILDINGS_3,
     };
 
     class Shr3dder {

@@ -125,10 +125,13 @@ int main(int argc, char **argv) {
     outputFilenames[shr3d::MIN] = basename + "_MIN.tif";
     outputFilenames[shr3d::DSM2] = basename + "_DSM2.tif";
     outputFilenames[shr3d::LABEL] = basename + "_label.tif";
+    outputFilenames[shr3d::LABELED_BUILDINGS] = basename + "_building_labels.tif";
+    outputFilenames[shr3d::LABELED_BUILDINGS_3] = basename + "_building_labels_3.tif";
 #endif
     outputFilenames[shr3d::DTM] = basename + "_DTM.tif";
     outputFilenames[shr3d::CLASS] = basename + "_class.tif";
     outputFilenames[shr3d::BUILDING] = basename + "_buildings.tif";
+    outputFilenames[shr3d::BUILDING_OUTLINES] = basename + "_buildings.shp";
 
     // Process
     shr3dder.process(dsmImage, minImage, outputFilenames);
