@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <iostream>
 #include <algorithm>
+#include <random>
 #include "align3d.h"
 
 namespace align3d {
@@ -86,15 +87,16 @@ namespace align3d {
         for (long i = 0; i < bins; i++) rmsArray[i] = new float[bins];
 
         // Get random samples.
-        srand(0);
+        std::mt19937_64 rgen(0); // Create random number generator with seed of 0
+        std::uniform_real_distribution<double> randx(bounds.xmin, bounds.xmax);
+        std::uniform_real_distribution<double> randy(bounds.ymin, bounds.ymax);
+
         std::vector<double> xlist;
         std::vector<double> ylist;
         for (long i = 0; i < maxSamples; i++) {
             // Get a random point in the overlap area.
-            double x = bounds.xmin + ((rand() / (double) RAND_MAX) * bounds.width);
-            double y = bounds.ymin + ((rand() / (double) RAND_MAX) * bounds.height);
-            xlist.push_back(x);
-            ylist.push_back(y);
+            xlist.push_back(randx(rgen));
+            ylist.push_back(randy(rgen));
         }
 
         // Start with brute force, but sample points to reduce timeline.
