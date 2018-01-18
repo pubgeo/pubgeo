@@ -1,6 +1,5 @@
 # JHU/APL pubgeo
-JHU/APL is committed to advancing the state of the art in geospatial computer vision by advocating for public data sets 
-and open source software. For more information on this and other efforts, please visit [JHU/APL](http://www.jhuapl.edu/pubgeo.html).
+JHU/APL is working to help advance the state of the art in geospatial computer vision by developing public benchmark data sets and open source software. For more information on this and other efforts, please visit JHU/APL.
 
 ## SHR3D
 
