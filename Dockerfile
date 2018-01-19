@@ -1,4 +1,4 @@
-FROM ubuntu:17.04
+FROM ubuntu:17.10
 MAINTAINER JHUAPL <pubgeo@jhuapl.edu>
 
 RUN apt update && apt upgrade -y && apt install -y --fix-missing --no-install-recommends\
@@ -28,8 +28,8 @@ RUN apt purge -y \
     cmake \
     git
 CMD echo "Please run a valid executable:" && \
-    echo "docker run -v <path to 3D data>:<mount point (mp)> jhuapl/pubgeo ./shr3d <mount point>/<3D file> DH=2 DZ=1 AGL=2 AREA=50" && \
-    echo "docker run -v <path to point clouds (pc)>:<mount point (mp)> jhuapl/pubgeo ./align3d <mp>/<reference pc> <mp>/<target pc> gsd=1.0 maxt=10.0"
+    echo "docker run --rm -v <path to 3D data>:<mount point (mp)> jhuapl/pubgeo ./shr3d <mount point>/<3D file> DH=2 DZ=1 AGL=2 AREA=50" && \
+    echo "docker run --rm -v <path to point clouds (pc)>:<mount point (mp)> jhuapl/pubgeo ./align3d <mp>/<reference pc> <mp>/<target pc> gsd=1.0 maxt=10.0"
 
 # Examples
 # docker run -v /home/ubuntu/pointclouds:pc jhuapl/pubgeo ./shr3d /pc/shr3dMe.las DH=2 DZ=1 AGL=2 AREA=50
