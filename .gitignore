@@ -36,3 +36,12 @@ build
 # Jetbrains
 .idea/
 cmake-build-debug/
+
+# Binary resources
+data/
+*.dbf
+*.las
+*.prj
+*.shp
+*.shx
+*.tif

@@ -2,7 +2,9 @@ SET(PUBGEO_HEADER_FILES
         util.h
         Image.h
         orthoimage.h
-        PointCloud.h)
+        PointCloud.h
+        disjoint_set.h
+        geo_polygon.h)
 
 SET(PUBGEO_SOURCE_FILES
         PointCloud.cpp
