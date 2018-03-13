@@ -4,6 +4,9 @@ PROJECT(pubgeo)
 SET(CMAKE_CXX_STANDARD 11)
 SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+option(PUBGEO_INSTALL_ALIGN3D "Install align3d executable." OFF)
+option(PUBGEO_INSTALL_SHR3D "Install shr3d executable." OFF)
+
 IF(WIN32)
        # Default install directory
        MESSAGE(WARNING "Advance INSTALL OSGeo4W64. Include: (Command Line Tools) pdal and its dependencies. Potentially requires change to PDALConfig.cmake.")

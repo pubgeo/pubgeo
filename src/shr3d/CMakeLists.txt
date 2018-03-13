@@ -16,6 +16,11 @@ TARGET_LINK_LIBRARIES(shr3d
         PUBLIC
         SHR3D_LIB)
 
+if(PUBGEO_INSTALL_SHR3D)
+    INSTALL(TARGETS shr3d
+        RUNTIME DESTINATION bin)
+endif()
+
 IF(TESTING)
     ## This executable will be used to test IO
     ADD_EXECUTABLE(shr3dTest test-main.cpp)

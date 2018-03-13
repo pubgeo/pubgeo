@@ -20,6 +20,11 @@ TARGET_LINK_LIBRARIES(align3d
         PUBLIC
         ALIGN3D_LIB)
 
+if(PUBGEO_INSTALL_ALIGN3D)
+    INSTALL(TARGETS align3d
+        RUNTIME DESTINATION bin)
+endif()
+
 if(TESTING)
     ADD_EXECUTABLE(align3dTest test-main.cpp)
     TARGET_LINK_LIBRARIES(align3dTest
