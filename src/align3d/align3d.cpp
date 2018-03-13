@@ -25,8 +25,8 @@ namespace align3d {
 
             // Map the point into the target.
             // Skip if this isn't a valid point.
-            long col = long((x - targetDSM.easting + dx) / targetDSM.gsd);
-            long row = targetDSM.height - 1 - long((y - targetDSM.northing + dy) / targetDSM.gsd);
+            long col = long((x - targetDSM.easting + 0.5*dx) / targetDSM.gsd);
+            long row = targetDSM.height - 1 - long((y - targetDSM.northing + 0.5*dy) / targetDSM.gsd);
             if (col < 0) continue;
             if (row < 0) continue;
             if (col >= targetDSM.width - 1) continue;
@@ -36,8 +36,8 @@ namespace align3d {
 
             // Map the point into the reference.
             // Skip if this isn't a valid point.
-            col = long((x - referenceDSM.easting) / referenceDSM.gsd);
-            row = referenceDSM.height - 1 - long((y - referenceDSM.northing) / referenceDSM.gsd);
+            col = long((x - referenceDSM.easting - 0.5*dx) / referenceDSM.gsd);
+            row = referenceDSM.height - 1 - long((y - referenceDSM.northing - 0.5*dy) / referenceDSM.gsd);
             if (col < 0) continue;
             if (row < 0) continue;
             if (col >= referenceDSM.width - 1) continue;
@@ -82,6 +82,7 @@ namespace align3d {
         long maxSamples = numSamples * 10;
 
         // Allocate RMS array.
+        maxt = step * ceil(maxt / step);
         long bins = long(maxt / step * 2) + 1;
         float **rmsArray = new float *[bins];
         for (long i = 0; i < bins; i++) rmsArray[i] = new float[bins];
