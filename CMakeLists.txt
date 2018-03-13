@@ -24,6 +24,7 @@ else()
     message(FATAL_ERROR "GDAL support is required")
 endif()
 FIND_PACKAGE(PDAL 1.4.0 REQUIRED)
+LINK_DIRECTORIES(${PDAL_LIBRARY_DIRS})
 
 if (CMAKE_COMPILER_IS_GNUCXX)
        SET( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror -O3" )
