@@ -2,13 +2,14 @@
 // Licensed under the MIT License. See LICENSE.txt in the project root for full license information.
 
 #include "align3d.h"
+#include <chrono>
 
 void printArguments();
 
 // Main program for simple 3d alignment.
 int main(int argc, char **argv) {
     // If no parameters, then print command line arguments.
-    if (argc < 4) {
+    if (argc < 3) {
         printf("\nNumber of arguments = %d\n", argc);
         for (int i = 1; i < argc; i++) {
             printf("  ARG[%d] = %s\n", i, argv[i]);
@@ -43,8 +44,7 @@ int main(int argc, char **argv) {
     printf("  maxt  = %f\n", params.maxt);
 
     // Initialize the timer.
-    time_t t0;
-    time(&t0);
+    std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
 
     try {
         // Align the target point cloud to the reference.
@@ -53,9 +53,8 @@ int main(int argc, char **argv) {
         std::cerr << "Reporting error: " << err << std::endl;
     }
     // Report total elapsed time.
-    time_t t1;
-    time(&t1);
-    printf("Total time elapsed = %f seconds\n", double(t1 - t0));
+    std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
+    printf("Total time elapsed = %f seconds\n", std::chrono::duration<double>(t1-t0).count());
 
     return 0;
 }
@@ -64,9 +63,9 @@ int main(int argc, char **argv) {
 void printArguments() {
     printf("Command Line: align3d <reference> <target> <parameters>\n");
     printf("Parameters:\n");
-    printf("  maxdz= Max local Z difference (meters) for matching\n");
-    printf("  gsd=   Ground Sample Distance (GSD) for gridding (meters)\n");
-    printf("  maxt=	 Maximum horizontal translation in search (meters); default = 10.0\n");
+    printf("  gsd=   Ground Sample Distance (GSD) for gridding point cloud (meters); default = 1.0\n");
+    printf("  maxdz= Max local Z difference (meters) for matching; default = 2*gsd\n");
+    printf("  maxt=  Maximum horizontal translation in search (meters); default = 10.0\n");
     printf("Examples:\n");
     printf("  align3d ref.las tgt.las maxt=10.0 gsd=0.5 maxdz=0.5\n\n");
 }

@@ -25,10 +25,10 @@ namespace align3d {
 
             // Map the point into the target.
             // Skip if this isn't a valid point.
-            long col = long((x - targetDSM.easting + dx) / targetDSM.gsd + 0.5);
-            long row = targetDSM.height - 1 - long((y - targetDSM.northing + dy) / targetDSM.gsd + 0.5);
-            if (col <= 0) continue;
-            if (row <= 0) continue;
+            long col = long((x - targetDSM.easting + dx) / targetDSM.gsd);
+            long row = targetDSM.height - 1 - long((y - targetDSM.northing + dy) / targetDSM.gsd);
+            if (col < 0) continue;
+            if (row < 0) continue;
             if (col >= targetDSM.width - 1) continue;
             if (row >= targetDSM.height - 1) continue;
             if (targetDSM.data[row][col] == 0) continue;
@@ -36,10 +36,10 @@ namespace align3d {
 
             // Map the point into the reference.
             // Skip if this isn't a valid point.
-            col = long((x - referenceDSM.easting) / referenceDSM.gsd + 0.5);
-            row = referenceDSM.height - 1 - long((y - referenceDSM.northing) / referenceDSM.gsd + 0.5);
-            if (col <= 0) continue;
-            if (row <= 0) continue;
+            col = long((x - referenceDSM.easting) / referenceDSM.gsd);
+            row = referenceDSM.height - 1 - long((y - referenceDSM.northing) / referenceDSM.gsd);
+            if (col < 0) continue;
+            if (row < 0) continue;
             if (col >= referenceDSM.width - 1) continue;
             if (row >= referenceDSM.height - 1) continue;
             if (referenceDSM.data[row][col] == 0) continue;
@@ -201,10 +201,6 @@ namespace align3d {
 		if (!ok) {
 			// If not a point cloud, then try to read as GeoTIFF.
 			ok = targetDSM.read(targetFileName);
-			if (ok && targetDSM.gsd != params.gsd) {
-				ok = false;
-				printf("Input files are GeoTIFF and point spacing does not match.\n");
-			}
 		}
         if (!ok) {
             printf("Failed to read %s\n", targetFileName);
