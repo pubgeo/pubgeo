@@ -2,9 +2,7 @@
 // Licensed under the MIT License. See LICENSE.txt in the project root for full license information.
 
 #include "PointCloud.h"
-#ifdef WIN32
 #include <regex>
-#endif
 
 // Pipeline needs to read in point cloud file of any type, and read it in. ideally in meters
 static std::string PDAL_PIPELINE_OPEN_ENGINE = R"({ "pipeline": [ ")";
@@ -73,9 +71,18 @@ namespace pubgeo {
 		inputFileName = std::regex_replace(inputFileName, std::regex("\\\\"), "/"); // Replace single backslash with double
 		outputFileName = std::regex_replace(outputFileName, std::regex("\\\\"), "/"); // Replace single backslash with double
 #endif
+        // Set reader type explicitly when input is TIFF
+        std::regex tiffRegex("^.*\\.tiff?$", std::regex_constants::icase);
+        bool tiffInput = std::regex_match(inputFileName, tiffRegex);
+
         std::ostringstream pipeline;
-        pipeline << "{\n\t\"pipeline\":[\n\t\t\"" << inputFileName
-                 << "\",\n\t\t{\n\t\t\t\"type\":\"filters.transformation\",\n"
+        pipeline << "{\n\t\"pipeline\":[\n"
+                 << "\t\t{\n\t\t\t\"filename\":\"" << inputFileName << "\"";
+        if (tiffInput) {
+            pipeline << ",\n\t\t\t\"type\":\"readers.gdal\"\n";
+        }
+        pipeline << "\n\t\t},\n"
+                 << "\t\t{\n\t\t\t\"type\":\"filters.transformation\",\n"
                  << "\t\t\t\"matrix\":\""
                  << "1 0 0 " << translateX << " "
                  << "0 1 0 " << translateY << " "
