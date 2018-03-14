@@ -236,7 +236,7 @@ namespace align3d {
         char outFileName[1024];
         sprintf(outFileName, "%s", targetFileName);
         sprintf(&outFileName[len - 4], "_offsets.txt");
-        FILE *fptr = fopen(outFileName, "w");
+        FILE *fptr = fopen(outFileName, "w+");
         if (fptr) {
             fprintf(fptr, "X Offset  Y Offset  Z Offset  Z RMS\n");
             fprintf(fptr, "%08.3f  %08.3f  %08.3f  %08.3f\n", result.tx, result.ty, result.tz, result.rms);
