@@ -1,16 +1,18 @@
-FROM ubuntu:17.10
-MAINTAINER JHUAPL <pubgeo@jhuapl.edu>
-
+FROM ubuntu:18.04 as base
 RUN apt update && apt upgrade -y && apt install -y --fix-missing --no-install-recommends\
-    build-essential \
     ca-certificates \
-	cmake \
-	curl \
-	gdal-bin \
-	git \
-	libgdal-dev \
-	libpdal-dev \
-	pdal \
+    curl \
+    gdal-bin \
+    pdal \
+&& rm -rf /var/lib/apt/lists/*
+
+FROM base as build
+RUN apt update && apt upgrade -y && apt install -y --fix-missing --no-install-recommends\
+    cmake \
+    libgdal-dev \
+    libpdal-dev \
+    build-essential \
+    git \
 && rm -rf /var/lib/apt/lists/*
 
 RUN cd / && git clone https://github.com/pubgeo/pubgeo
@@ -20,15 +22,11 @@ WORKDIR /pubgeo/build/
 RUN cmake .. && make -j 10 && make install && mv shr3d align3d /usr/local/bin
 WORKDIR /
 
-# cleanup
-RUN rm -rf /pubgeo
-RUN apt purge -y \
-    build-essential \
-    libgdal-dev \
-    libpdal-dev \
-    cmake \
-    git \
-    && apt autoremove -y
+FROM base as release
+MAINTAINER JHUAPL <pubgeo@jhuapl.edu>
+
+WORKDIR /
+COPY --from=build /usr/local /usr/local
 
 CMD echo "Please run a valid executable:" && \
     echo "docker run --rm -v <path to 3D data>:<mount point (MP)> jhuapl/pubgeo shr3d <MP>/<3D file> DH=2 DZ=1 AGL=2 AREA=50" && \
