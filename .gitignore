@@ -1,4 +1,5 @@
 build
+.gitlab-ci.yml
 
 # Prerequisites
 *.d

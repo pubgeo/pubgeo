@@ -54,8 +54,7 @@ namespace pubgeo {
 
         pdal::BOX3D box;
         pv->calculateBounds(box);
-        pdal::SpatialReference sr = pv->spatialReference();
-        zone = sr.computeUTMZone(box);
+        zone = pv->spatialReference().getUTMZone();
 
         // used later to return points
         xOff = (int) floor(box.minx);

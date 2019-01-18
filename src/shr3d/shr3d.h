@@ -10,7 +10,12 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <string>
+
+#include <pdal/util/Bounds.hpp>
+
+#include "geo_polygon.h"
 #include "orthoimage.h"
 
 #define LABEL_OBJECT    1
@@ -64,10 +69,12 @@ namespace shr3d {
         DSM,
         MIN,
         DTM,
+        INTENSITY,
         CLASS,
         BUILDING,
         BUILDING_OUTLINES,
         DSM2,
+        MINAGL,
         LABEL,
         LABELED_BUILDINGS,
         LABELED_BUILDINGS_3,
@@ -82,32 +89,91 @@ namespace shr3d {
         double min_area_meters;
         double max_tree_height_meters;
         bool egm96;
+        pdal::Bounds bounds;
 
         // Constructor
         Shr3dder() : dh_meters(1), dz_meters(1), agl_meters(2),
-                min_area_meters(50), max_tree_height_meters(40), egm96(false) {}
+                min_area_meters(50), max_tree_height_meters(40), egm96(false), bldgProcessed(false) {}
 
         // Function declarations.
-        void process(const OrthoImage<unsigned short> &dsmImage, const OrthoImage<unsigned short> &minImage,
-                std::map<ImageType,std::string> outputFilenames);
+        void process(std::map<ImageType,std::string> outputFilenames);
 
-        bool createDSM(const PointCloud& pset, OrthoImage<unsigned short> &dsmImage);
+        bool setDSM(std::string dsmFile)    { return dsmImage.read(dsmFile.c_str()); }
+        bool setPSET(std::string psetFile)  { return pset.Read(psetFile.c_str()); }
+        bool setPSET(const pdal::PointViewPtr view)   { return pset.Read(view); }
+        
+        void reset() {
+            dsmImage.Deallocate();
+            minImage.Deallocate();
+            dtmImage.Deallocate();
+            intImage.Deallocate();
+            classImage.Deallocate();
+            bldgImage.Deallocate();
+            dsm2Image.Deallocate();
+            minAglImage.Deallocate();
+            labelImage.Deallocate();
+            bldgLabels.Deallocate();
+            bldgLabels3.Deallocate();
+            bldgOutlines.clear();
+            bldgProcessed = false;
+        }
 
-        bool createMIN(const PointCloud& pset, OrthoImage<unsigned short> &minImage);
+#define IMGET(im,func) if(im.empty()) func(); return im
+        const OrthoImage<unsigned short> &getDSM()  {IMGET(dsmImage,createDSM);}
+        const OrthoImage<unsigned short> &getMIN()  {IMGET(minImage,createMIN);}
+        const OrthoImage<unsigned short> &getINT()  {IMGET(intImage,createIntensity);}
+        const OrthoImage<unsigned short> &getDTM()  {IMGET(dtmImage,createDTM);}
+        const OrthoImage<unsigned short> &getDSM2() {IMGET(dsm2Image,createDTM);}
+        const OrthoImage<unsigned int> &getLBL()    {IMGET(labelImage,createDTM);}
+        const OrthoImage<unsigned short> &getMINAGL()   {IMGET(minAglImage,createMinAGL);}
+        const OrthoImage<unsigned char> &getCLS()   {IMGET(classImage,labelClasses);}
+        const OrthoImage<unsigned char> &getBLDG()  {IMGET(bldgImage,labelBuildings);}
+        const OrthoImage<int> &getBLDGLBL() {IMGET(bldgLabels,createOutlines);}
+        const OrthoImage<int> &getBLDGLBL3(){IMGET(bldgLabels3,createOutlines);}
+        const std::map<int,GeoPolygon<double>>& getBLDGPOLY() {
+            if (!bldgProcessed)
+                createOutlines();
+            return bldgOutlines;
+        }
+#undef IMGET
+        
+    protected:
+        PointCloud pset;
+        OrthoImage<unsigned short> dsmImage;
+        OrthoImage<unsigned short> minImage;
+        OrthoImage<unsigned short> dtmImage;
+        OrthoImage<unsigned short> intImage;
+        OrthoImage<unsigned char> classImage;
+        OrthoImage<unsigned char> bldgImage;
+        OrthoImage<unsigned short> dsm2Image;
+        OrthoImage<unsigned short> minAglImage;
+        OrthoImage<unsigned int> labelImage;
+        OrthoImage<int> bldgLabels;
+        OrthoImage<int> bldgLabels3;
+        std::map<int,GeoPolygon<double>> bldgOutlines;
+        bool bldgProcessed;
+        
+        void createDSM();
 
-        void createDTM(const OrthoImage<unsigned short> &dsmImage,  const OrthoImage<unsigned short> &minImage,
-                OrthoImage<unsigned short> &dtmImage, OrthoImage<unsigned short> &dsm2Image, OrthoImage<unsigned long> &labelImage);
+        void createMIN();
 
-        OrthoImage<unsigned char> labelClasses(const OrthoImage<unsigned short> &dsmImage, const OrthoImage<unsigned short> &dtmImage,
-                       const OrthoImage<unsigned short> &dsm2Image, const OrthoImage<unsigned long> &labelImage);
+        void createDTM();
 
-        OrthoImage<unsigned char> labelBuildings(const OrthoImage<unsigned char> &classImage);
+        void createMinAGL();
 
-        void classifyGround(OrthoImage<unsigned long> &labelImage, OrthoImage<unsigned short> &dsmImage,
+        void createIntensity();
+
+        void labelClasses();
+
+        void labelBuildings();
+        
+        void createOutlines();
+
+        void classifyGround(OrthoImage<unsigned int> &labelImage, OrthoImage<unsigned short> &dsmImage,
                                    OrthoImage<unsigned short> &dtmImage, int dhBins, unsigned int dzShort);
 
         void classifyNonGround(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned short> &dtmImage,
-                                      OrthoImage<unsigned long> &labelImage, unsigned int dzShort,
+                                      OrthoImage<unsigned int> &labelImage, unsigned int dzShort,
                                       unsigned int aglShort,
                                       float minAreaMeters);
 

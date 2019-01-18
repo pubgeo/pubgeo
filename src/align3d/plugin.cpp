@@ -29,16 +29,16 @@
 #include "orthoimage.h"
 #include "plugin.hpp"
 
-#include <pdal/pdal_macros.hpp>
-
 namespace pdal
 {
 
-static PluginInfo const s_info = PluginInfo(
-    "filters.align3d", "Shareable High Resolution 3D (Almes et al., 2017)",
-    "http://pdal.io/stages/filters.align3d.html");
+static StaticPluginInfo const s_info = {
+    "filters.align3d",
+    "Shareable High Resolution 3D (Almes et al., 2017)",
+    "http://pdal.io/stages/filters.align3d.html"
+};
 
-CREATE_SHARED_PLUGIN(1, 0, Align3dFilter, Filter, s_info)
+CREATE_SHARED_STAGE(Align3dFilter, s_info)
 
 std::string Align3dFilter::getName() const
 {

@@ -45,19 +45,25 @@ namespace pubgeo {
         inline float x(int i) const {
             if (pv != nullptr)
                 return (float) (pv->getFieldAs<double>(pdal::Dimension::Id::X, i) - xOff);
-            throw "Point set has not be initialized.";
+            throw "Point set has not been initialized.";
         }
 
         inline float y(int i) const {
             if (pv != nullptr)
                 return (float) (pv->getFieldAs<double>(pdal::Dimension::Id::Y, i) - yOff);
-            throw "Point set has not be initialized.";
+            throw "Point set has not been initialized.";
         }
 
         inline float z(int i) const {
             if (pv != nullptr)
                 return (float) (pv->getFieldAs<double>(pdal::Dimension::Id::Z, i) - zOff);
-            throw "Point set has not be initialized.";
+            throw "Point set has not been initialized.";
+        }
+
+        inline float i(int i) const {
+            if (pv != nullptr)
+                return pv->getFieldAs<float>(pdal::Dimension::Id::Intensity, i);
+            throw "Point set has not been initialized.";
         }
 
     private:

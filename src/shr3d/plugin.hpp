@@ -40,7 +40,7 @@ namespace pdal
 class PDAL_DLL Shr3dWriter : public Writer
 {
 public:
-    Shr3dWriter() : shr3dder(), m_filename(), output(shr3d::DTM) {}
+    Shr3dWriter();
 
     static void* create();
     static int32_t destroy(void*);
@@ -53,7 +53,7 @@ private:
     shr3d::Shr3dder shr3dder;
 
     std::string m_filename;
-    int output;
+    std::string output_types;
 
     Shr3dWriter& operator=(const Shr3dWriter&) = delete;
     Shr3dWriter(const Shr3dWriter&) = delete;

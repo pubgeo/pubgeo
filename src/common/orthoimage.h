@@ -40,6 +40,10 @@ namespace pubgeo {
     template<> struct make_long<unsigned int>   { typedef unsigned long type; };
     template<> struct make_long<unsigned long>  { typedef unsigned long long type; };
 
+    // Define type trait to make signed version of specific types when applicable
+    template<typename T> struct make_signed { typedef typename std::make_signed<T>::type type; };
+    template<> struct make_signed<double> { typedef double type; };
+    template<> struct make_signed<float> { typedef float type; };
 //
 // Ortho image template class
 //
@@ -47,7 +51,7 @@ namespace pubgeo {
     class OrthoImage : public Image<TYPE> {
 
     public:
-        typedef typename std::make_signed<TYPE>::type STYPE; // Define a signed version of TYPE
+        typedef typename make_signed<TYPE>::type STYPE; // Define a signed version of TYPE
         typedef typename make_long<TYPE>::type LTYPE; // Define a long version of TYPE
 
         double easting;
@@ -71,7 +75,7 @@ namespace pubgeo {
         ~OrthoImage() {}
 
         // Read any GDAL-supported image.
-        bool read(char *fileName) {
+        bool read(const char *fileName) {
             // Open the image.
             GDALAllRegister();
             CPLSetConfigOption("GDAL_DATA", ".\\gdaldata");
@@ -344,14 +348,16 @@ namespace pubgeo {
             this->offset = minVal;
             this->scale = (maxVal - minVal) / maxImageVal;
 
-            // Calculate image width and height.
-            this->width = (unsigned int) ((pset.bounds.xMax - pset.bounds.xMin) / gsdMeters + 1);
-            this->height = (unsigned int) ((pset.bounds.yMax - pset.bounds.yMin) / gsdMeters + 1);
+            if (this->empty()) {
+                // Calculate image width and height.
+                this->width = (unsigned int) ((pset.bounds.xMax - pset.bounds.xMin) / gsdMeters + 1);
+                this->height = (unsigned int) ((pset.bounds.yMax - pset.bounds.yMin) / gsdMeters + 1);
 
-            // Allocate an ortho image.
-            this->Allocate(this->width, this->height);
-            this->easting = pset.bounds.xMin;
-            this->northing = pset.bounds.yMin;
+                // Allocate an ortho image.
+                this->Allocate(this->width, this->height);
+                this->easting = pset.bounds.xMin;
+                this->northing = pset.bounds.yMin;
+            }
             this->zone = pset.zone;
             this->gsd = gsdMeters;
 
@@ -514,7 +520,7 @@ namespace pubgeo {
 
         // Conceptionally, this is the same as a median filter, but instead of comparing the
         // cell value to the median, we're comparing it against the specified quantile
-        void quantileFilter(int rad, TYPE dzScaled, float quantile) {
+        void quantileFilter(int rad, TYPE dzScaled, float quantile, TYPE voidVal = 0, bool skipVoids = true) {
             // Filter quantile
             quantile = std::max(0.0f,std::min(1.0f,quantile));
 
@@ -527,7 +533,7 @@ namespace pubgeo {
                 // Only replace if it differs by more than dz from the median
                 if (abs(qValue - static_cast<STYPE>(ref)) > dzScaled)
                     *val = qValue;
-            }, rad);
+            }, rad, voidVal, skipVoids);
         }
 
         // Apply a minimum filter to an image (erosion)

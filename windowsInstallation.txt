@@ -3,12 +3,14 @@ While only the docker version of align3d and shr3d is fully supported, it is pos
 Download and run OSGeo4W64 (64-bit) Installer (http://download.osgeo.org/osgeo4w/osgeo4w-setup-x86_64.exe)
 	Select advanced installation. Everything else until packages is default.
 		From Command Line Utilities select:
-			Gdal, gdal-dev, pdal
+			Gdal, gdal-dev, pdal, boost
 		Install packages to meet dependencies (page after package selection).
 
 If you did not install OSGeo4W64 in the standard location (C:\OSGeo4W64), do the following:
 	In CMakeLists.txt, modify SET(CMAKE_PREFIX_PATH "...") to point to your OSGeo4W64 install directory
 	Edit ...\OSGeo4W64\lib\pdal\cmake\PDALConfig.cmake, ...\OSGeo4W64\lib\pdal\cmake\PDALTargets.cmake, and ...\OSGeo4W64\lib\pdal\cmake\PDALTargets-relwithdebinfo.cmake so that all references to C:\OSGeo4W64 are replaced with the actual install location.
+
+In CMakeLists.txt, modify SET(BOOST_INCLUDEDIR "C:\\OSGeo4W64\\include\\boost-1_55") as needed to point to the include directory for the version of boost installed with OSGeo4W64.
 
 Download and install visual studio 2017 community (REQUIRES SYSTEM-RESTART)
 	Install packages:
@@ -24,7 +26,7 @@ Open Visual Studio
 			Verify shr3d.exe and align3d.exe exist in the pubgeo/build/x64-Debug folder
 
 Open command prompt
-	Run ...\OSGeo4W64bin\o4w_env.bat; this will configure required environment variables for the session
+	Run ...\OSGeo4W64\bin\o4w_env.bat; this will configure required environment variables for the session
 	cd to ...\pubgeo\build\x64-Debug
 	Run align3d or shr3d:
 		align3d.exe ...\path\to\reference.las ...\path\to\alignMe.las gsd=1.0 maxt=10.0

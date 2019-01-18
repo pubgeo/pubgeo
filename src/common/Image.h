@@ -108,6 +108,11 @@ namespace pubgeo {
             }
         }
 
+        // Test if object does not contain data
+        bool empty() {
+            return !data;
+        }
+
         /**
          * Apply a filter to this image, copying off a reference version for use by the filter algorithm
          * and overwriting this image with the new results
