@@ -32,7 +32,7 @@ derived point clouds.
     ./align3d <Reference point cloud(LAS)> <Target point cloud(LAS)> maxdz=<Maximum local z difference(m)> gsd=<Ground sample distance(m)> maxt=<Maximum XY translation for search(m)>
 
 #### Example:
-    ./align-3d reference.las target.las maxt=10.0 gsd=1.0
+    ./align3d reference.las target.las maxt=10.0 gsd=1.0
 This will produce multiple output files:
 * Aligned.las- A point cloud representation of the target, aligned to the reference
 * Aligned.tif- A DSM of the target, aligned to the reference
