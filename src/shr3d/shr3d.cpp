@@ -209,7 +209,7 @@ void Shr3dder::createIntensity() {
         // Divide & copy
         double scale = std::numeric_limits<unsigned short>::max() / max_i;
         for (unsigned int y = 0; y < intImage.height; ++y) {
-            for (unsigned int x = 0; x <= intImage.width; ++x) {
+            for (unsigned int x = 0; x < intImage.width; ++x) {
                 intImage.data[y][x] = (unsigned short) (scale * sumImage.data[y][x] / cntImage.data[y][x]);
             }
         }
