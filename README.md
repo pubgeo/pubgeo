@@ -18,6 +18,7 @@ This will produce multiple files as a result:
   * **Building image**- Binary mask of all detected buildings
   * **DSM**- Digital surface model (reflective surface)
   * **DTM**- Digital terrain model (bare earth, or ground)
+  * **INT**- Intensity image
 * Vector files (shapefiles: *.shp, *.prj, *.shx, *.dbf):
   * **Building outlines**- Simplified polygons of detected building perimeters
 

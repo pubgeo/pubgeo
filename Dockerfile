@@ -1,4 +1,4 @@
-FROM pdal/pdal:1.8
+FROM pdal/pdal:1.8 as builder
 MAINTAINER JHUAPL <pubgeo@jhuapl.edu>
 
 RUN apt update && apt upgrade -y && apt install -y --fix-missing --no-install-recommends\
@@ -15,15 +15,15 @@ COPY CMakeLists.txt /pubgeo/
 COPY CMakeSettings.json /pubgeo/
 WORKDIR /pubgeo/build/
 RUN cmake .. && make -j 10 && make install && mv shr3d align3d /usr/local/bin
-WORKDIR /
 
-# cleanup
-RUN rm -rf /pubgeo
-RUN apt purge -y \
-    build-essential \
-    cmake \
-    libgdal-dev \
-    && apt autoremove -y
+
+FROM pdal/pdal:1.8 as runner
+MAINTAINER JHUAPL <pubgeo@jhuapl.edu>
+
+WORKDIR /
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /usr/lib/libpdal_plugin_filter_align3d* /usr/lib/
+COPY --from=builder /usr/lib/libpdal_plugin_writer_shr3d* /usr/lib/
 
 CMD echo "Please run a valid executable:" && \
     echo "docker run --rm -v <path to 3D data>:<mount point (MP)> jhuapl/pubgeo shr3d <MP>/<3D file> DH=2 DZ=1 AGL=2 AREA=50" && \
