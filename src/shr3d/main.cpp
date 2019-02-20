@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
     // Get command line arguments and confirm they are valid.
     shr3d::Shr3dder shr3dder;
     bool convert = false;
-    char inputFileName[1024];
+    char inputFileName[1024] = {0};
     strcpy(inputFileName, argv[1]);
     for (int i = 2; i < argc; i++) {
         if (strstr(argv[i], "DH=")) { shr3dder.dh_meters = atof(&(argv[i][3])); }
@@ -89,20 +89,16 @@ int main(int argc, char **argv) {
 
     // Read DSM as SHORT.
     // Input can be GeoTIFF or LAS/BPF.
-    int len = (int) strlen(inputFileName);
-    char *ext = &inputFileName[len - 3];
-    printf("File Type = .%s\n", ext);
-    if (strcmp(ext, "tif") == 0) {
+    char *ext = strrchr(inputFileName,'.');
+    printf("File Type = %s\n", ext);
+    if (strcmp(ext, ".tif") == 0) {
         if (!shr3dder.setDSM(readFileName))
             return -1;
-    } else if ((strcmp(ext, "las") == 0) || (strcmp(ext, "bpf") == 0)) {
+    } else {
         if (!shr3dder.setPSET(inputFileName))
             return -1;
 
         outputFilenames[shr3d::DSM] = basename + "_DSM.tif";
-    } else {
-        printf("Error: Unrecognized file type.");
-        return -1;
     }
 
     // Convert horizontal and vertical uncertainty values to bin units.
