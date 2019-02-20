@@ -332,7 +332,7 @@ namespace pubgeo {
         }
 
         // Read image from point cloud file.
-        bool readFromPointCloud(char *fileName, float gsdMeters, MIN_MAX_TYPE mode = MIN_VALUE) {
+        bool readFromPointCloud(const char *fileName, float gsdMeters, MIN_MAX_TYPE mode = MIN_VALUE) {
             // Read a PSET file (e.g., BPF or LAS).
             PointCloud pset;
             bool ok = pset.Read(fileName);

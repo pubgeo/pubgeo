@@ -172,44 +172,47 @@ namespace align3d {
         printf("Z RMS    = %f m\n", result.rms);
     }
 
+    // Loads file into raster, and applies common filterings to it
+    bool load_file(OrthoImage<unsigned short> &dsm, const char *inputFileName, const AlignParameters &params) {
+        int len = (int) strlen(inputFileName);
+        const char *ext = &inputFileName[len - 3];
+        if (strcmp(ext, "tif") == 0) {
+            printf("File Type = .%s; loading as raster\n", ext);
+            if (!dsm.read(inputFileName)) {
+                printf("Failed to read %s\n", inputFileName);
+                return false;
+            }
+        } else {
+            // Convert the point cloud file to a DSM.
+            printf("File Type = .%s; loading as point cloud\n", ext);
+            if (!dsm.readFromPointCloud(inputFileName, params.gsd, MAX_VALUE)) {
+                printf("Failed to read %s\n", inputFileName);
+                return false;
+            }
+        }
+        // Fill small voids.
+        dsm.fillVoidsPyramid(true, 2);
+        printf("Filtering data\n");
+        // Remove points along edges which are difficult to match.
+        dsm.edgeFilter((long) (params.maxdz / dsm.scale));
+        return true;
+    }
+    
 // Align target file to match reference file.
     bool AlignTarget2Reference(char *referenceFileName, char *targetFileName, AlignParameters params) {
-        // Read the reference LAS file as a DSM.
-        // Fill small voids.
-        // Remove points along edges which are difficult to match.
-        printf("Reading reference point cloud: %s\n", referenceFileName);
+        printf("Reading reference file: %s\n", referenceFileName);
         OrthoImage<unsigned short> referenceDSM;
-        bool ok = referenceDSM.readFromPointCloud(referenceFileName, params.gsd, MAX_VALUE);
-		if (!ok) {
-			// If not a point cloud, then try to read as GeoTIFF.
-			ok = referenceDSM.read(referenceFileName);
-			if (ok) params.gsd = referenceDSM.gsd;
-		}
-        if (!ok) {
-            printf("Failed to read %s\n", referenceFileName);
+        if (!load_file(referenceDSM, referenceFileName, params))
             return false;
+        if (params.gsd != referenceDSM.gsd) {
+            printf("Changing gsd to %f to match reference DSM\n",referenceDSM.gsd);
+            params.gsd = referenceDSM.gsd;
         }
-        referenceDSM.fillVoidsPyramid(true, 2);
-        printf("Filtering reference point cloud.\n");
-        referenceDSM.edgeFilter((long) (params.maxdz / referenceDSM.scale));
-
-        // Read the target LAS file as a DSM.
-        // Fill small voids.
-        // Remove points along edges which are difficult to match.
-        printf("Reading target point cloud: %s\n", targetFileName);
+        
+        printf("Reading target file: %s\n", targetFileName);
         OrthoImage<unsigned short> targetDSM;
-        ok = targetDSM.readFromPointCloud(targetFileName, params.gsd, MAX_VALUE);
-		if (!ok) {
-			// If not a point cloud, then try to read as GeoTIFF.
-			ok = targetDSM.read(targetFileName);
-		}
-        if (!ok) {
-            printf("Failed to read %s\n", targetFileName);
+        if (!load_file(targetDSM, targetFileName, params))
             return false;
-        }
-        targetDSM.fillVoidsPyramid(true, 2);
-        printf("Filtering target point cloud.\n");
-        targetDSM.edgeFilter((long) (params.maxdz / targetDSM.scale));
 
         // Get overlapping bounds.
         AlignBounds bounds;
@@ -252,8 +255,7 @@ namespace align3d {
         targetDSM.offset += result.tz;
         targetDSM.easting += result.tx;
         targetDSM.northing += result.ty;
-        ok = targetDSM.write(outFileName, true);
-        if (!ok) {
+        if (!targetDSM.write(outFileName, true)) {
             printf("Failed to write %s\n", outFileName);
             return false;
         }
@@ -262,8 +264,7 @@ namespace align3d {
         // For now, this requires an extra read of the point cloud file.
         printf("Writing aligned LAS file.\n");
         sprintf(&outFileName[len - 4], "_aligned.las");
-        ok = PointCloud::TransformPointCloud(targetFileName, outFileName, result.tx, result.ty, result.tz);
-        if (!ok) {
+        if (!PointCloud::TransformPointCloud(targetFileName, outFileName, result.tx, result.ty, result.tz)) {
             printf("Failed to write %s\n", outFileName);
             return false;
         }
