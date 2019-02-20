@@ -219,7 +219,11 @@ namespace pubgeo {
                             break;
                         }
                         default: {
-                            // TODO: shouldn't get here, relay error
+                            printf("Can't open image datatype; datatype is not one of: byte, uint16, or float32\n");
+                            // Deallocate memory.
+                            CPLFree(poBandBlock);
+                            delete poDataset;
+                            return false;
                         }
                     }
                 }
