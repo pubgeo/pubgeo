@@ -124,7 +124,7 @@ namespace align3d {
                                      rms, numSampled, completeness);
                 if (!ok) continue;
                 rmsArray[i][j] = rms;
-                if (rms < bestRMS) {
+                if (rms < bestRMS || (rms == bestRMS && (dx*dx+dy*dy < bestDX*bestDX+bestDY*bestDY))) {
                     bestCompleteness = completeness;
 
                     bestRMS = rms;
