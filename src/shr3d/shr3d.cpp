@@ -39,6 +39,10 @@ void Shr3dder::process(std::map<ImageType,std::string> outputFilenames) {
                 b = getDSM2().write(fname, true, egm96);    break;
             case MINAGL:
                 b = getMINAGL().write(fname, true, egm96);  break;
+            case DTM0:
+                b = getDTM0().write(fname, true, egm96);  break;
+            case LABEL0:
+                b = getLBL0().write(fname, false);  break;
             case LABEL:
                 b = getLBL().write(fname, false);   break;
             case LABELED_BUILDINGS:
@@ -65,7 +69,7 @@ void sizeImageFromBox(OrthoImage<unsigned short> &im, pdal::BOX2D box, float dh_
 
 void Shr3dder::createDSM() {
     printf("Creating DSM\n");
-    if (!pset.numPoints)
+    if (is_pset_empty())
         throw pdal::pdal_error("Point cloud undefined / empty\n");
     sizeImageFromBox(dsmImage, bounds.to2d(), dh_meters);
     if (!dsmImage.readFromPointCloud(pset, (float) dh_meters, shr3d::MAX_VALUE))
@@ -87,7 +91,7 @@ void Shr3dder::createDSM() {
 
 void Shr3dder::createMIN() {
     printf("Creating MIN\n");
-    if (pset.numPoints > 0) {
+    if (!is_pset_empty()) {
         sizeImageFromBox(minImage, bounds.to2d(), dh_meters);
         // Now get the minimum Z values for the DTM.
         if (!minImage.readFromPointCloud(pset, (float) dh_meters, shr3d::MIN_VALUE))
@@ -108,20 +112,17 @@ void Shr3dder::createMIN() {
     minImage.fillVoidsPyramid(true, 2);
 }
 
-void Shr3dder::createDTM() {
+void Shr3dder::createDSM2() {
     const OrthoImage<unsigned short> &dsmImage = getDSM();
     const OrthoImage<unsigned short> &minImage = getMIN();
-    printf("Creating DTM\n");
-
-    // Convert horizontal and vertical uncertainty values to bin units.
-    int dh_bins = MAX(1, (int) floor(dh_meters / dsmImage.gsd));
-    unsigned int dz_short = (unsigned int) (dz_meters / dsmImage.scale);
-    unsigned int agl_short = (unsigned int) (agl_meters / dsmImage.scale);
-    unsigned int maxTreeHeightScaled = (max_tree_height_meters / minImage.scale);
-    unsigned short threshold = (dz_meters / dsmImage.scale);
+    printf("Creating DSM2\n");
 
     // Find many of the trees by comparing MIN and MAX. Set their values to void.
     shr3d::OrthoImage<unsigned short> varImage = dsmImage - minImage;
+
+    // Convert threshold & tree height to scaled units.
+    unsigned int maxTreeHeightScaled = (max_tree_height_meters / minImage.scale);
+    unsigned short threshold = (dz_meters / dsmImage.scale);
 
     // Copy DSM, and apply tree filter so any location where the last return image differs from the DSM
     // by more than THRESHOLD is set to void.
@@ -135,32 +136,142 @@ void Shr3dder::createDTM() {
                 *val = 0;
         }
     }, 1, 0, false);
+}
 
+void adjust_scale(OrthoImage<unsigned short> &im, float new_offset, float new_scale) {
+    if (new_offset == im.offset && new_scale == im.scale)
+        return;
+    for (std::vector<unsigned short> &r : im.data) {
+        for (unsigned short &z : r) {
+            if (z) { // Preserve voids
+                z = (z*im.scale+im.offset-new_offset)/new_scale;
+            }
+        }
+    }
+    im.offset = new_offset;
+    im.scale = new_scale;
+}
+
+bool Shr3dder::setDTM0(std::string dtmFile) {
+    if (!dtm0Image.read(dtmFile.c_str()))
+        return false;
+    
+    // If a pointcloud was specified, update bounds and gsd based on the DTM
+    if (!is_pset_empty()) {
+        dh_meters = dtm0Image.gsd;
+        bounds = pdal::Bounds(pdal::BOX2D(dtm0Image.easting,dtm0Image.northing,
+                dtm0Image.width*dh_meters+dtm0Image.easting,
+                dtm0Image.height*dh_meters+dtm0Image.northing));
+    }
+    
+    // Get DSM && MIN (get MIN since it could be created from base point cloud)
+    // Note while I'm calling getDSM and getMIN, I'm using the class members (as they're not const)
+    getDSM();
+    getMIN();
+    
+    // Check that dsm and dtm match in everything important
+    if (dtm0Image.zone != dsmImage.zone) {
+        printf("ERROR: DSM/PSET zone %d doesn't match DTM zone %d\n",dsmImage.zone,dtm0Image.zone);
+        return false;
+    } else if (dtm0Image.gsd != dsmImage.gsd) {
+        printf("ERROR: DSM gsd %f doesn't match DTM gsd %f\n",dsmImage.gsd,dtm0Image.gsd);
+        return false;
+    } else if (dtm0Image.easting != dsmImage.easting ||
+            dtm0Image.northing != dsmImage.northing ||
+            dtm0Image.width != dsmImage.width ||
+            dtm0Image.height != dsmImage.height) {
+        printf("ERROR: DSM bounds don't match DTM bounds\n");
+        return false;
+    }
+    
+    // Need to match scales and offsets between DSM and DTM
+    float maxImageVal = (float) (pow(2.0, int(sizeof(unsigned short) * 8)) - 1);
+    float offset = std::min(dtm0Image.offset,dsmImage.offset);
+    float maxz = std::max(dtm0Image.offset+maxImageVal*dtm0Image.scale,
+            dsmImage.offset+maxImageVal*dsmImage.scale);
+    float scale = (maxz-offset) / maxImageVal;
+    
+    // Fix images
+    adjust_scale(dsmImage,offset,scale);
+    adjust_scale(minImage,offset,scale);
+    adjust_scale(dtm0Image,offset,scale);
+    
+    // Adjust minimum image so that it's no lower than the DTM
+    for (unsigned int j = 0; j < minImage.height; j++) {
+        for (unsigned int i = 0; i < minImage.width; i++) {
+            if (minImage.data[j][i] && dtm0Image.data[j][i] && 
+                    (minImage.data[j][i] < dtm0Image.data[j][i]))
+                minImage.data[j][i] = dtm0Image.data[j][i];
+        }
+    }
+    
+    // Need to initialize label0Image
+    label0Image = OrthoImage<unsigned int>(&dtm0Image);
+    
+    return true;
+}
+
+void Shr3dder::createDTM0() {
+    const OrthoImage<unsigned short> &dsmImage = getDSM();
+    const OrthoImage<unsigned short> &minImage = getMIN();
+    const OrthoImage<unsigned short> &dsm2Image = getDSM2();
+    printf("Creating DTM0\n");
 
     // Generate label image.
-    labelImage = OrthoImage<unsigned int>(&dsmImage);
+    label0Image = OrthoImage<unsigned int>(&dsmImage);
+
+    if (gnd_label >= 0) {
+        if (is_pset_empty())
+            throw pdal::pdal_error("Point cloud undefined / empty\n");
+        PointCloud ground = pset.CropToClass(gnd_label);
+        dtm0Image = OrthoImage<unsigned short>(&dsmImage); // Size to match dsm
+        dtm0Image.readFromPointCloud(ground,dsmImage.gsd,shr3d::MAX_VALUE); // Using max to better match DSM
+
+        return;
+    }
+
+    // Convert horizontal and vertical uncertainty values to bin units.
+    int dh_bins = MAX(1, (int) floor(dh_meters / dsmImage.gsd));
+    unsigned int dz_short = (unsigned int) (dz_meters / dsmImage.scale);
 
     // Allocate a DTM image as SHORT and copy in the Min DSM values.
-    dtmImage = minImage;
+    dtm0Image = minImage;
 
     // Classify ground points.
-    classifyGround(labelImage, dsm2Image, dtmImage, dh_bins, dz_short);
+    classifyGround(label0Image, dsm2Image, dtm0Image, dh_bins, dz_short); // Updates labelImage, dtmImage
 
     // For DSM voids, also set DTM value to void.
     // Note: because we've changed the DSM by this point (setting voids where all the trees are),
     //  use the minImage which will have the same voids as the original DSM
-    printf("Setting DTM values to VOID where DSM is VOID...\n");
+    printf("Setting DTM0 values to VOID where DSM is VOID...\n");
     for (unsigned int j = 0; j < minImage.height; j++) {
         for (unsigned int i = 0; i < minImage.width; i++) {
-            if (minImage.data[j][i] == 0) dtmImage.data[j][i] = 0;
+            if (minImage.data[j][i] == 0) dtm0Image.data[j][i] = 0;
         }
     }
 
     // Median filter, replacing only points differing by more than the DZ threshold.
-    dtmImage.medianFilter(1, dz_short);
+    dtm0Image.medianFilter(1, dz_short);
+}
+
+void Shr3dder::createDTM() {
+    const OrthoImage<unsigned short> &dsm2Image = getDSM2();
+    const OrthoImage<unsigned short> &dtm0Image = getDTM0();
+    const OrthoImage<unsigned int> &label0Image = getLBL0();
+    printf("Creating DTM\n");
+    
+    // Convert horizontal and vertical uncertainty values to bin units.
+    unsigned int dz_short = (unsigned int) (dz_meters / dsmImage.scale);
+    unsigned int agl_short = (unsigned int) (agl_meters / dsmImage.scale);
+    
+    // Allocate a DTM image as SHORT and copy in the Pre-DTM values.
+    dtmImage = dtm0Image;
+
+    // Allocate a LBL image copy in the Pre-Label values.
+    labelImage = label0Image;
 
     // Refine the object label image and export building outlines.
-    classifyNonGround(dsm2Image, dtmImage, labelImage, dz_short, agl_short, (float) min_area_meters);
+    classifyNonGround(dsm2Image, dtmImage, labelImage, dz_short, agl_short, (float) min_area_meters); // Updates labelImage
 
     // Fill small voids in the DTM after all processing is complete.
     dtmImage.fillVoidsPyramid(true, 2);
@@ -169,12 +280,12 @@ void Shr3dder::createDTM() {
 void Shr3dder::createIntensity() {
     const OrthoImage<unsigned short> &dsmImage = getDSM();
     printf("Creating INT\n");
-    if (!pset.numPoints)
+    if (is_pset_empty())
         throw pdal::pdal_error("Point cloud undefined / empty\n");
 
     intImage = OrthoImage<unsigned short>(&dsmImage);
 
-    if (pset.numPoints)    {
+    if (!is_pset_empty())    {
         OrthoImage<double> sumImage = OrthoImage<double>(&dsmImage);
         OrthoImage<unsigned short> cntImage = OrthoImage<unsigned short>(&dsmImage);
 
@@ -223,14 +334,12 @@ void Shr3dder::createMinAGL() {
     const OrthoImage<unsigned short> &dsmImage = getDSM();
     const OrthoImage<unsigned short> &dtmImage = getDTM();
     printf("Creating MinAGL\n");
-    if (!pset.numPoints)
-        throw pdal::pdal_error("Point cloud undefined / empty\n");
 
     unsigned int dz_short = (unsigned int) (dz_meters / dsmImage.scale);
     unsigned int agl_short = (unsigned int) (agl_meters / dsmImage.scale);
 
     // Create the Minimum AGL Image; image gets the minimum values that are greater than the DTM+AGL
-    if (pset.numPoints)    {
+    if (!is_pset_empty())    {
         // Initialize size and allocate zeros
         minAglImage = OrthoImage<unsigned short>(&dsmImage);
 
@@ -251,7 +360,7 @@ void Shr3dder::createMinAGL() {
             for (int y1 = std::max(y,0); y1 <= std::min(y+1,(int) minAglImage.height-1); ++y1) {
                 for (int x1 = std::max(x,0); x1 <= std::min(x+1,(int) minAglImage.width-1); ++x1) {
                     unsigned short& z0 = minAglImage.data[y1][x1];
-                    unsigned short& z1 = dtmImage.data[y1][x1];
+                    const unsigned short& z1 = dtmImage.data[y1][x1];
                     if (z1 && (z > z1+agl_short)  && (!z0 || z < z0))
                         z0 = z;
                 }
@@ -279,7 +388,7 @@ void Shr3dder::createMinAGL() {
         std::partial_sort(ngbrs.begin(), ngbrs.begin() + (ix + 1), ngbrs.end());
         short qValue = static_cast<short>(ngbrs[ix]);
         // Only replace if it differs by more than dz from the median
-        if (ref && abs(qValue - static_cast<short>(ref)) > dz_short)
+        if (ref && abs(qValue - static_cast<short>(ref)) > static_cast<long>(dz_short))
             *val = qValue;
     },2);
 
@@ -385,7 +494,7 @@ void Shr3dder::createOutlines() {
 
 
 // Extend object boundaries to capture points missed around the edges.
-void extendObjectBoundaries(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned int> &labelImage,
+void extendObjectBoundaries(const OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned int> &labelImage,
                             int edgeResolution, unsigned int minDistanceShortValue) {
     // Loop enough to capture the edge resolution.
     for (int k = 0; k < edgeResolution; k++) {
@@ -441,7 +550,7 @@ void extendObjectBoundaries(OrthoImage<unsigned short> &dsmImage, OrthoImage<uns
 }
 
 // Label boundaries of objects above ground level.
-void labelObjectBoundaries(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned int> &labelImage,
+void labelObjectBoundaries(const OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned int> &labelImage,
                            int edgeResolution, unsigned int minDistanceShortValue) {
     // Initialize the labels to LABEL_GROUND.
     for (unsigned int j = 0; j < labelImage.height; j++) {
@@ -475,7 +584,7 @@ void labelObjectBoundaries(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsi
     }
 }
 
-bool findObjectBoundsInColumn(OrthoImage<unsigned int> &labelImage, ObjectType &obj, unsigned int column, int &min_row, int &max_row) {
+bool findObjectBoundsInColumn(const OrthoImage<unsigned int> &labelImage, ObjectType &obj, unsigned int column, int &min_row, int &max_row) {
     min_row = -1;
     max_row = -1;
 
@@ -505,7 +614,7 @@ bool findObjectBoundsInColumn(OrthoImage<unsigned int> &labelImage, ObjectType &
 }
 
 // Fill inside the object countour labels if points are above the nearby ground level.
-void fillObjectBounds(OrthoImage<unsigned int> &newLabelImage, OrthoImage<unsigned int> &labelImage, OrthoImage<unsigned short> &dsmImage, ObjectType &obj,
+void fillObjectBounds(OrthoImage<unsigned int> &newLabelImage, const OrthoImage<unsigned int> &labelImage, const OrthoImage<unsigned short> &dsmImage, ObjectType &obj,
                       int edgeResolution) {
     unsigned int label = obj.label;
 
@@ -749,7 +858,7 @@ void finishLabelImage(OrthoImage<unsigned int> &labelImage) {
 }
 
 // Classify ground points, fill the voids, and generate a bare earth terrain model. 
-void Shr3dder::classifyGround(OrthoImage<unsigned int> &labelImage, OrthoImage<unsigned short> &dsmImage,
+void Shr3dder::classifyGround(OrthoImage<unsigned int> &labelImage, const OrthoImage<unsigned short> &dsmImage,
                               OrthoImage<unsigned short> &dtmImage, int dhBins, unsigned int dzShort) {
     // Fill voids.
     printf("Filling voids...\n");
@@ -768,25 +877,25 @@ void Shr3dder::classifyGround(OrthoImage<unsigned int> &labelImage, OrthoImage<u
 
         // Label the object boundaries.
         printf("Labeling object boundaries...\n");
-        labelObjectBoundaries(dtmImage, labelImage, dhBins, dzShort);
+        labelObjectBoundaries(dtmImage, labelImage, dhBins, dzShort); // Updates labelImage
 
         // Extend labels for object boundaries..
         printf("Extending object boundaries...\n");
-        extendObjectBoundaries(dtmImage, labelImage, dhBins, dzShort);
+        extendObjectBoundaries(dtmImage, labelImage, dhBins, dzShort); // Updates labelImage
 
         // Group the objects.
         printf("Grouping objects...\n");
         std::vector<ObjectType> objects;
-        groupObjects(labelImage, dtmImage, objects, maxCount, dzShort);
+        groupObjects(labelImage, dtmImage, objects, maxCount, dzShort); // Updates labelImage, objects
         printf("Number of objects = %ld\n", objects.size());
 
         // Generate object groups and void fill them in the DEM image.
         printf("Labeling and removing objects...\n");
         OrthoImage<unsigned int> newlabelImage(labelImage);
         for (size_t i = 0; i < objects.size(); i++) {
-            fillObjectBounds(newlabelImage,labelImage, dtmImage, objects[i], dhBins);
+            fillObjectBounds(newlabelImage,labelImage, dtmImage, objects[i], dhBins); // Updates newlabelImage, objects
         }
-        swap(newlabelImage,labelImage);
+        std::swap(newlabelImage,labelImage);
 
         // Update the label image values for easy viewing.
         printf("Finishing label image for display...\n");
@@ -865,7 +974,7 @@ void Shr3dder::classifyGround(OrthoImage<unsigned int> &labelImage, OrthoImage<u
 }
 
 // Classify non-ground points.
-void Shr3dder::classifyNonGround(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned short> &dtmImage,
+void Shr3dder::classifyNonGround(const OrthoImage<unsigned short> &dsmImage, const OrthoImage<unsigned short> &dtmImage,
                                  OrthoImage<unsigned int> &labelImage, unsigned int dzShort, unsigned int aglShort,
                                  float minAreaMeters) {
     // Compute minimum number of points based on threshold given for area.

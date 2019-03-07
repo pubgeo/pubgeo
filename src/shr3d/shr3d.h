@@ -75,6 +75,8 @@ namespace shr3d {
         BUILDING_OUTLINES,
         DSM2,
         MINAGL,
+        DTM0,
+        LABEL0,
         LABEL,
         LABELED_BUILDINGS,
         LABELED_BUILDINGS_3,
@@ -90,17 +92,22 @@ namespace shr3d {
         double max_tree_height_meters;
         bool egm96;
         pdal::Bounds bounds;
+        int gnd_label;
 
         // Constructor
         Shr3dder() : dh_meters(1), dz_meters(1), agl_meters(2),
-                min_area_meters(50), max_tree_height_meters(40), egm96(false), bldgProcessed(false) {}
+                min_area_meters(50), max_tree_height_meters(40),
+                egm96(false), gnd_label(-1), bldgProcessed(false) {}
 
         // Function declarations.
         void process(std::map<ImageType,std::string> outputFilenames);
 
         bool setDSM(std::string dsmFile)    { return dsmImage.read(dsmFile.c_str()); }
+        bool setDTM0(std::string dtmFile);
         bool setPSET(std::string psetFile)  { return pset.Read(psetFile.c_str()); }
         bool setPSET(const pdal::PointViewPtr view)   { return pset.Read(view); }
+        
+        bool is_pset_empty() { return !pset.numPoints; }
         
         void reset() {
             dsmImage.Deallocate();
@@ -121,10 +128,12 @@ namespace shr3d {
 #define IMGET(im,func) if(im.empty()) func(); return im
         const OrthoImage<unsigned short> &getDSM()  {IMGET(dsmImage,createDSM);}
         const OrthoImage<unsigned short> &getMIN()  {IMGET(minImage,createMIN);}
-        const OrthoImage<unsigned short> &getINT()  {IMGET(intImage,createIntensity);}
+        const OrthoImage<unsigned short> &getDSM2() {IMGET(dsm2Image,createDSM2);}
+        const OrthoImage<unsigned short> &getDTM0() {IMGET(dtm0Image,createDTM0);}
+        const OrthoImage<unsigned int>   &getLBL0() {IMGET(label0Image,createDTM0);}
         const OrthoImage<unsigned short> &getDTM()  {IMGET(dtmImage,createDTM);}
-        const OrthoImage<unsigned short> &getDSM2() {IMGET(dsm2Image,createDTM);}
-        const OrthoImage<unsigned int> &getLBL()    {IMGET(labelImage,createDTM);}
+        const OrthoImage<unsigned int>   &getLBL()  {IMGET(labelImage,createDTM);}
+        const OrthoImage<unsigned short> &getINT()  {IMGET(intImage,createIntensity);}
         const OrthoImage<unsigned short> &getMINAGL()   {IMGET(minAglImage,createMinAGL);}
         const OrthoImage<unsigned char> &getCLS()   {IMGET(classImage,labelClasses);}
         const OrthoImage<unsigned char> &getBLDG()  {IMGET(bldgImage,labelBuildings);}
@@ -141,12 +150,14 @@ namespace shr3d {
         PointCloud pset;
         OrthoImage<unsigned short> dsmImage;
         OrthoImage<unsigned short> minImage;
+        OrthoImage<unsigned short> dtm0Image;
         OrthoImage<unsigned short> dtmImage;
         OrthoImage<unsigned short> intImage;
         OrthoImage<unsigned char> classImage;
         OrthoImage<unsigned char> bldgImage;
         OrthoImage<unsigned short> dsm2Image;
         OrthoImage<unsigned short> minAglImage;
+        OrthoImage<unsigned int> label0Image;
         OrthoImage<unsigned int> labelImage;
         OrthoImage<int> bldgLabels;
         OrthoImage<int> bldgLabels3;
@@ -156,6 +167,10 @@ namespace shr3d {
         void createDSM();
 
         void createMIN();
+
+        void createDSM2();
+
+        void createDTM0();
 
         void createDTM();
 
@@ -169,10 +184,10 @@ namespace shr3d {
         
         void createOutlines();
 
-        void classifyGround(OrthoImage<unsigned int> &labelImage, OrthoImage<unsigned short> &dsmImage,
+        void classifyGround(OrthoImage<unsigned int> &labelImage, const OrthoImage<unsigned short> &dsmImage,
                                    OrthoImage<unsigned short> &dtmImage, int dhBins, unsigned int dzShort);
 
-        void classifyNonGround(OrthoImage<unsigned short> &dsmImage, OrthoImage<unsigned short> &dtmImage,
+        void classifyNonGround(const OrthoImage<unsigned short> &dsmImage, const OrthoImage<unsigned short> &dtmImage,
                                       OrthoImage<unsigned int> &labelImage, unsigned int dzShort,
                                       unsigned int aglShort,
                                       float minAreaMeters);

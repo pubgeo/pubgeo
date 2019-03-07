@@ -25,92 +25,43 @@ namespace pubgeo {
         unsigned int bands;
         float scale;
         float offset;
-        TYPE **data;    // Order is HEIGHT (outside), WIDTH, BAND (inside).
+        std::vector<std::vector<TYPE>> data;    // Order is HEIGHT (outside), WIDTH, BAND (inside).
 
         // Default constructor
-        Image() : width(0), height(0), bands(0), scale(1), offset(0), data(nullptr) {}
+        Image() : width(0), height(0), bands(1), scale(1), offset(0), data() {}
 
         // Alternate constructor (creates identically sized, blank image)
         template<class OTYPE>
         Image(const Image<OTYPE>* i, unsigned int nbands = 1) :
-                width(0),
-                height(0),
-                bands(0),
+                width(i->width),
+                height(i->height),
+                bands(nbands),
                 scale(i->scale),
                 offset(i->offset),
-                data(nullptr) {
-            Allocate(i->width,i->height,nbands);
-        }
-
-        // Copy constructor
-        Image(const Image<TYPE>& i) :
-            width(i.width),
-            height(i.height),
-            bands(i.bands),
-            scale(i.scale),
-            offset(i.offset),
-            data(nullptr) {
-            // Deep copy of data
-            // Note: not using Allocate so we can skip the memset
-            data = new TYPE *[height];
-            for (unsigned int y = 0; y < height; y++) {
-                data[y] = new TYPE[width * bands];
-                std::memcpy(data[y], i.data[y], width * bands * sizeof(TYPE));
-            }
-        }
-
-        // Move constructor
-        Image(Image<TYPE>&& i) : Image() { // initialize via default constructor
-            swap(*this, i);
-        }
+                data(height,std::vector<TYPE>(width*bands,0)) {}
 
         // Destructor
-        virtual ~Image() {
-            Deallocate();
-        }
-
-        // Swap function
-        friend void swap(Image<TYPE>& first, Image<TYPE>& second) {
-            using std::swap; // Allow consideration of std::swap for following calls
-
-            swap(first.width, second.width);
-            swap(first.height, second.height);
-            swap(first.bands, second.bands);
-            swap(first.scale, second.scale);
-            swap(first.offset, second.offset);
-            swap(first.data, second.data);
-        }
-
-        // Assignment operator
-        Image<TYPE>& operator=(Image<TYPE> rhs) {
-            swap(*this, rhs);
-            return *this;
-        }
-
-        // Deallocate memory.
-        void Deallocate() {
-            if (!data) return;
-            for (unsigned int y = 0; y < height; y++) delete[]data[y];
-            delete[]data;
-            data = nullptr;
-        }
+        virtual ~Image() {}
 
         // Allocate memory.
         void Allocate(unsigned int numColumns, unsigned int numRows, unsigned int numBands = 1) {
-            if (data) Deallocate();
+            Deallocate();
             width = numColumns;
             height = numRows;
             bands = numBands;
-            data = new TYPE *[height];
-            for (unsigned int y = 0; y < height; y++) {
-                data[y] = new TYPE[width * bands];
-                std::memset(data[y], 0, width * bands * sizeof(TYPE));
-            }
+            data.resize(height,std::vector<TYPE>(width*bands,0));
+        }
+
+        void Deallocate() {
+            width = 0;
+            height = 0;
+            bands = 1;
+            data.clear();
         }
 
         // Test if object does not contain data
         bool empty() {
-            return !data;
+            return data.empty();
         }
 
         /**
@@ -348,7 +299,6 @@ namespace pubgeo {
 
         // Sets image to the src image upsampled by scale_factor, using nearest-neighbor algorithm
         virtual void nn_upsample(const Image<TYPE>* src, unsigned int scale_factor) {
-            Deallocate();
             width = src->width*scale_factor;
             height = src->height*scale_factor;
             bands = src->bands;
@@ -356,10 +306,10 @@ namespace pubgeo {
             offset = src->offset;
 
             // First, allocate
-            data = new TYPE *[height];
-            for (size_t y = 0; y < height; ++y) {
-                data[y] = new TYPE[width * bands];
+            for (size_t y = 0; y < data.size(); ++y) {
+                data[y].resize(width * bands);
             }
+            data.resize(height,std::vector<TYPE>(width * bands));
 
             // Second, copy
             size_t y, x;
@@ -373,7 +323,7 @@ namespace pubgeo {
 
                 // Duplicate rows
                 for (size_t j = 1; j < scale_factor; ++j)
-                    std::memcpy(data[y+j], data[y], width * bands * sizeof(TYPE));
+                    data[y+j] = data[y];
             }
         }
     };

@@ -18,10 +18,13 @@ void printArguments() {
     printf("  AREA=  minimum building area (meters)\n");
     printf("  EGM96  set this flag to write vertical datum = EGM96\n");
     printf("  BOUNDS=MINX,MAXX,MINY,MAXY set to define image bounds\n");
+    printf("  DTM=   Path to optional input DTM geotiff file\n");
+    printf("  GND_LABEL= Set to the value of the point cloud ground classification label (typically 2)\n");
+    printf("             if the point cloud has already been partially classified.\n");
     printf("Examples:\n");
     printf("  For EO DSM:    shr3d dsm.tif DH=5.0 DZ=1.0 AGL=2 AREA=50.0 EGM96\n");
-    printf("  For lidar DSM: shr3d dsm.tif DH=1.0 DZ=1.0 AGL=2.0 AREA=50.0\n");
-    printf("  For lidar LAS: shr3d pts.las DH=1.0 DZ=1.0 AGL=2.0 AREA=50.0\n");
+    printf("  For lidar DSM: shr3d dsm.tif DH=1.0 DZ=1.0 AGL=2 AREA=50.0\n");
+    printf("  For lidar LAS: shr3d pts.las DH=1.0 DZ=1.0 AGL=2 AREA=50.0\n");
 }
 
 
@@ -42,6 +45,7 @@ int main(int argc, char **argv) {
     bool convert = false;
     char inputFileName[1024] = {0};
     strcpy(inputFileName, argv[1]);
+    std::string dtmFileName;
     for (int i = 2; i < argc; i++) {
         if (strstr(argv[i], "DH=")) { shr3dder.dh_meters = atof(&(argv[i][3])); }
         if (strstr(argv[i], "DZ=")) { shr3dder.dz_meters = atof(&(argv[i][3])); }
@@ -60,6 +64,8 @@ int main(int argc, char **argv) {
             str_bnds >> shr3dder.bounds;
         }
         if (strstr(argv[i], "CONVERT")) { convert = true; }
+        if (strstr(argv[i], "GND_LABEL=")) { shr3dder.gnd_label = atoi(&(argv[i][10])); }
+        if (strstr(argv[i], "DTM=")) { dtmFileName = std::string(&(argv[i][4])); }
     }
     if ((shr3dder.dh_meters == 0.0) || (shr3dder.dz_meters == 0.0) || (shr3dder.agl_meters == 0.0)) {
         printf("DH_METERS = %f\n", shr3dder.dh_meters);
@@ -99,6 +105,14 @@ int main(int argc, char **argv) {
             return -1;
 
         outputFilenames[shr3d::DSM] = basename + "_DSM.tif";
+        outputFilenames[shr3d::INTENSITY] = basename + "_INT.tif";
+    }
+    
+    if (dtmFileName.empty()) {
+        outputFilenames[shr3d::DTM] = basename + "_DTM.tif";
+    } else {
+        if (!shr3dder.setDTM0(dtmFileName))
+            return -1;
     }
 
     // Convert horizontal and vertical uncertainty values to bin units.
@@ -115,15 +129,17 @@ int main(int argc, char **argv) {
 
     // Set outputs
 #ifdef DEBUG
+    outputFilenames[shr3d::DSM] = basename + "_DSM.tif";
     outputFilenames[shr3d::MIN] = basename + "_MIN.tif";
     outputFilenames[shr3d::DSM2] = basename + "_DSM2.tif";
     outputFilenames[shr3d::MINAGL] = basename + "_MINAGL.tif";
+    outputFilenames[shr3d::DTM0] = basename + "_DTM0.tif";
+    outputFilenames[shr3d::DTM] = basename + "_DTM.tif";
+    outputFilenames[shr3d::LABEL0] = basename + "_label0.tif";
     outputFilenames[shr3d::LABEL] = basename + "_label.tif";
     outputFilenames[shr3d::LABELED_BUILDINGS] = basename + "_building_labels.tif";
     outputFilenames[shr3d::LABELED_BUILDINGS_3] = basename + "_building_labels_3.tif";
 #endif
-    outputFilenames[shr3d::DTM] = basename + "_DTM.tif";
-    outputFilenames[shr3d::INTENSITY] = basename + "_INT.tif";
     outputFilenames[shr3d::CLASS] = basename + "_class.tif";
     outputFilenames[shr3d::BUILDING] = basename + "_buildings.tif";
     outputFilenames[shr3d::BUILDING_OUTLINES] = basename + "_buildings.shp";

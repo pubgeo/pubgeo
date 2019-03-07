@@ -8,7 +8,13 @@ Shareable High Resolution 3D Point Cloud Classification
 Terrain Model (DTM); a classification image labeling ground, buildings, and trees; and a simplified building outlines vector product.
 
 ### SHR3D Usage
-    ./shr3d <Input File(LAS|TIF)> DH=<Horizontal uncertainty(m)> DZ=<Vertical uncertainty(m)> AGL=<Min building height(m)> AREA=<Min building area(m^2)>
+    ./shr3d <Input File (LAS|TIF)> DH=<Horizontal uncertainty(m)> DZ=<Vertical uncertainty(m)> AGL=<Min building height(m)> <Options>
+    Options:
+        AREA=<Min building area(m^2)>   Buildings smaller than this size will not be labeled (default: 50)
+        EGM96                           Set this flag to write vertical datum
+        BOUNDS=<MINX,MAXX,MINY,MAXY>    Set to define image bounds
+        DTM=<DTM File (TIF)>            Path to optional DTM file
+        GND_LABEL=<LABEL>               Set to the value of the point cloud ground classification label (typically 2) if the point cloud has already been partially classified.
 
 #### Example:
     ./shr3d shr3dMe.las DH=0.5 DZ=0.5 AGL=2 AREA=50

@@ -322,7 +322,7 @@ namespace pubgeo {
                 for (unsigned int i = 1; i <= this->bands; i++) {
                     GDALRasterBand *poBand = poDstDS->GetRasterBand(i);
                     for (unsigned int j = 0; j < this->height; j++) {
-                        CPLErr rv = poBand->RasterIO(GF_Write, 0, j, this->width, 1, this->data[j], this->width, 1, theBandDataType,
+                        CPLErr rv = poBand->RasterIO(GF_Write, 0, j, this->width, 1, const_cast<TYPE*>(this->data[j].data()), this->width, 1, theBandDataType,
                                          sizeof(TYPE) * this->bands,
                                          this->width * this->bands * sizeof(TYPE));
                         if (rv > CPLErr::CE_Warning) {
@@ -513,7 +513,7 @@ namespace pubgeo {
 
             // Deallocate memory for all but the input DSM.
             for (unsigned int i = 1; i <= level; i++) {
-                pyramid[i]->Deallocate();
+                delete pyramid[i];
             }
         }
 

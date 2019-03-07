@@ -71,6 +71,7 @@ void Shr3dWriter::addArgs(ProgramArgs& args)
     args.add("area", "Minimum building area", shr3dder.min_area_meters, shr3dder.min_area_meters);
     args.add("egm96", "Set vertical datum to EGM96", shr3dder.egm96, shr3dder.egm96);
     args.add("bounds", "Bounds for cropped image, e.g.: '([xmin, xmax], [ymin, ymax])'", shr3dder.bounds);
+    args.add("gnd_label", "Ground label if using preclassified point cloud (typically 2)", shr3dder.gnd_label, shr3dder.gnd_label);
     args.add("image_type",
         (boost::format("Output image type (%d=DSM,%d=MIN,%d=DTM,%d=INTENSITY,%d=CLASS,%d=BUILDING,%d=BUILDING SHAPEFILE)")
             % shr3d::DSM % shr3d::MIN % shr3d::DTM % shr3d::INTENSITY % shr3d::CLASS % shr3d::BUILDING % shr3d::BUILDING_OUTLINES).str(),

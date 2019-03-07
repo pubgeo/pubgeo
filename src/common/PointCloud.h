@@ -32,6 +32,8 @@ namespace pubgeo {
         static bool TransformPointCloud(std::string inputFileName, std::string outputFileName,
                                         float translateX, float translateY, float translateZ);
 
+        PointCloud CropToClass(int keep_class);
+
         bool Read(const char *fileName);
         bool Read(pdal::PointViewPtr view);
 
@@ -63,6 +65,12 @@ namespace pubgeo {
         inline float i(int i) const {
             if (pv != nullptr)
                 return pv->getFieldAs<float>(pdal::Dimension::Id::Intensity, i);
+            throw "Point set has not been initialized.";
+        }
+
+        inline int c(int i) const {
+            if (pv != nullptr)
+                return pv->getFieldAs<int>(pdal::Dimension::Id::Classification, i);
             throw "Point set has not been initialized.";
         }
 

@@ -92,6 +92,16 @@ namespace pubgeo {
         return true;
     }
 
+    PointCloud PointCloud::CropToClass(int keep_class) {
+        pdal::PointViewPtr outView = pv->makeNew();
+        for (pdal::PointId idx = 0; idx < pv->size(); ++idx)
+            if (c(idx)==keep_class)
+                outView->appendPoint(*pv,idx);
+        PointCloud out;
+        out.Read(outView);
+        return out;
+    }
+
     void PointCloud::CleanupPdalPointers() {
         if (pv != nullptr) {
             pv = nullptr;
