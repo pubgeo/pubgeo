@@ -227,6 +227,20 @@ void Shr3dder::createDTM0() {
         dtm0Image = OrthoImage<unsigned short>(&dsmImage); // Size to match dsm
         dtm0Image.readFromPointCloud(ground,dsmImage.gsd,shr3d::MAX_VALUE); // Using max to better match DSM
 
+        // Need to match scales and offsets between DSM and DTM
+        adjust_scale(dtm0Image,dsmImage.offset,dsmImage.scale);
+    
+        // Fill voids
+        dtm0Image.fillVoidsPyramid(false);
+    
+        // Replicate DSM voids in DTM
+        for (unsigned int j = 0; j < dtm0Image.height; j++) {
+            for (unsigned int i = 0; i < dtm0Image.width; i++) {
+                if (!dsmImage.data[j][i])
+                    dtm0Image.data[j][i] = 0;
+            }
+        }
+
         return;
     }
 
