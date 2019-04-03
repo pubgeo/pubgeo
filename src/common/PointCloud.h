@@ -29,11 +29,6 @@
 //
 // For more information, please see: http://www.jhuapl.edu/pubgeo.html
 
-//
-// Created by almess1 on 4/20/17.
-// This file was created in order to adapt the SHR3D and ALIGN3D to open source IO.
-//
-
 #ifndef PUBGEO_NOT_POINT_SETS_H
 #define PUBGEO_NOT_POINT_SETS_H
 

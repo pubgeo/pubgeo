@@ -29,10 +29,6 @@
 //
 // For more information, please see: http://www.jhuapl.edu/pubgeo.html
 
-//
-// Created by almess1 on 4/20/17.
-//
-
 #ifndef PUBGEO_UTIL_H
 #define PUBGEO_UTIL_H
 
