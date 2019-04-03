@@ -1,4 +1,6 @@
-// Copyright (c) 2017, Bradley J Chambers (brad.chambers@gmail.com)
+// Original work Copyright (c) 2017, Bradley J Chambers (brad.chambers@gmail.com)
+// Modified work Copyright (c) 2018-2019, The Johns Hopkins University /
+//   Applied Physics Laboratory (JHU/APL)
 // All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
