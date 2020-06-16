@@ -3,8 +3,7 @@ Open source software and public data for geospatial computer vision
 
 ## SHR3D
 
-Shareable High Resolution 3D Point Cloud Classification
->SHR3D classifies a 3D point cloud to generate simple geospatial products, including: a Digital Surface Model (DSM); a Digital 
+>SHR3D classifies a 3D point cloud to generate simple geospatial products including a Digital Surface Model (DSM); a Digital 
 Terrain Model (DTM); a classification image labeling ground, buildings, and trees; and a simplified building outlines vector product.
 
 ### SHR3D Usage
@@ -29,7 +28,7 @@ This will produce multiple files as a result:
   * **Building outlines**- Simplified polygons of detected building perimeters
 
 ## ALIGN3D
-Align 3D Point Cloud Registration Tool
+
 >ALIGN3D estimates and applies a transform to align 3D point clouds. This algorithm was developed 
 for use with airborne lidar, multiple view satellite imagery, and synthetic aperture radar 
 derived point clouds.
