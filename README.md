@@ -1,5 +1,5 @@
 # JHU/APL pubgeo
-Open source software and public data for geospatial computer vision.
+Open source software and public data for geospatial computer vision
 
 ## SHR3D
 
