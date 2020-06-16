@@ -1,6 +1,3 @@
-# JHU/APL pubgeo
-Open source software and public data for geospatial computer vision
-
 ## SHR3D
 
 >SHR3D classifies a 3D point cloud to generate simple geospatial products including a Digital Surface Model (DSM); a Digital 
